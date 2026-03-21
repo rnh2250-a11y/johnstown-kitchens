@@ -2,6 +2,30 @@ import { NextResponse } from 'next/server';
 
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
+// Escape control characters ONLY inside JSON string literals using a state machine.
+// Structural whitespace (newlines between tokens) is left intact.
+function sanitizeJsonStrings(str) {
+  let result = '';
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    const code = ch.charCodeAt(0);
+    if (escaped) { result += ch; escaped = false; continue; }
+    if (ch === '\\' && inString) { escaped = true; result += ch; continue; }
+    if (ch === '"') { inString = !inString; result += ch; continue; }
+    if (inString && code < 0x20) {
+      if (ch === '\n') result += '\\n';
+      else if (ch === '\r') result += '\\r';
+      else if (ch === '\t') result += '\\t';
+      else result += '\\u' + code.toString(16).padStart(4, '0');
+      continue;
+    }
+    result += ch;
+  }
+  return result;
+}
+
 export async function POST(request) {
   try {
     const { website, brandName, industry, region, services } = await request.json();
@@ -54,31 +78,23 @@ Return ONLY a raw JSON array with no markdown formatting, no code fences, no exp
     }
 
     const data = await r.json();
-    console.log('Gemini discover raw candidates:', JSON.stringify(data.candidates?.[0]?.content?.parts?.slice(0, 2)));
-
     const parts = data.candidates?.[0]?.content?.parts || [];
     const text = parts.filter(p => p.text).map(p => p.text).join('\n').trim();
 
-    console.log('Gemini discover text (first 500):', text.slice(0, 500));
-
-    // Try to extract JSON array from response
     let competitors = [];
-    const arrMatch = text.match(/\[[\s\S]*\]/);
+    // Strip markdown fences if present
+    const stripped = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    const arrMatch = stripped.match(/\[[\s\S]*\]/);
     if (arrMatch) {
       try {
-        // Remove control characters inside JSON string values that break JSON.parse
-        const cleaned = arrMatch[0].replace(/[\u0000-\u001F\u007F]/g, (c) => {
-          if (c === '\n') return '\\n';
-          if (c === '\r') return '\\r';
-          if (c === '\t') return '\\t';
-          return ' ';
-        });
-        competitors = JSON.parse(cleaned);
+        competitors = JSON.parse(sanitizeJsonStrings(arrMatch[0]));
       } catch (e) {
-        console.error('JSON parse error:', e.message, 'Raw match:', arrMatch[0].slice(0, 300));
+        console.error('JSON parse error after sanitize:', e.message);
+        // Last resort: try the raw match directly
+        try { competitors = JSON.parse(arrMatch[0]); } catch {}
       }
     } else {
-      console.warn('No JSON array found in response. Full text:', text.slice(0, 800));
+      console.warn('No JSON array found. Text:', text.slice(0, 500));
     }
 
     return NextResponse.json({ competitors });

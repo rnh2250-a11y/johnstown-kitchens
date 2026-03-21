@@ -2,8 +2,30 @@ import { NextResponse } from 'next/server';
 
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
+// Escape control characters ONLY inside JSON string literals using a state machine.
+function sanitizeJsonStrings(str) {
+  let result = '';
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    const code = ch.charCodeAt(0);
+    if (escaped) { result += ch; escaped = false; continue; }
+    if (ch === '\\' && inString) { escaped = true; result += ch; continue; }
+    if (ch === '"') { inString = !inString; result += ch; continue; }
+    if (inString && code < 0x20) {
+      if (ch === '\n') result += '\\n';
+      else if (ch === '\r') result += '\\r';
+      else if (ch === '\t') result += '\\t';
+      else result += '\\u' + code.toString(16).padStart(4, '0');
+      continue;
+    }
+    result += ch;
+  }
+  return result;
+}
+
 // Accepts a single competitor object to avoid Vercel timeout.
-// The frontend calls this once per competitor and streams results progressively.
 export async function POST(request) {
   try {
     const { competitor } = await request.json();
@@ -55,15 +77,16 @@ Return a JSON array of 3-6 items. If you cannot find recent content, return [].`
 
       const data = await r.json();
       const text = data.candidates?.[0]?.content?.parts?.filter(p => p.text).map(p => p.text).join('\n') || '';
-      let cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-      const arrMatch = cleaned.match(/\[[\s\S]*\]/);
+      const stripped = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+      const arrMatch = stripped.match(/\[[\s\S]*\]/);
       if (arrMatch) {
         try {
-          const sanitized = arrMatch[0].replace(/[\u0000-\u001F\u007F]/g, c => c === '\n' ? '\\n' : c === '\r' ? '\\r' : c === '\t' ? '\\t' : ' ');
-          const items = JSON.parse(sanitized);
+          const items = JSON.parse(sanitizeJsonStrings(arrMatch[0]));
           const content = items.map(item => ({ ...item, id: Math.random().toString(36).slice(2, 10), scannedAt: new Date().toISOString() }));
           return NextResponse.json({ content });
-        } catch {}
+        } catch (e) {
+          console.error('Crawl JSON parse error:', e.message);
+        }
       }
       return NextResponse.json({ content: [] });
     }
