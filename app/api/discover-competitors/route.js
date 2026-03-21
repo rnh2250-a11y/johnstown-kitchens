@@ -16,43 +16,24 @@ export async function POST(request) {
       services && `Services: ${services}`,
     ].filter(Boolean).join('. ');
 
-    const prompt = `Find 6-10 real competitors for this business: ${context}
+    const prompt = `List 6 to 8 real competitors for this Irish kitchen business: ${context}
 
-Use your knowledge to identify companies that compete with this business:
-- Direct competitors in the same geographic area (Ireland/Tipperary)
-- Companies offering bespoke kitchen design and installation in Ireland
-- Aspirational kitchen brands Irish customers might compare against
-
-For each competitor return an object with fields: name, website, rationale, category (direct/aspirational/regional), instagram, facebook, linkedin.`;
+Include direct local competitors, other Irish kitchen companies, and 1-2 aspirational brands.
+For each, provide: company name, website URL, one sentence rationale, and category (direct/aspirational/regional).
+Keep rationale to ONE short sentence only. Keep all text fields very brief.`;
 
     const r = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         systemInstruction: {
-          parts: [{ text: 'You are a competitive intelligence analyst specialising in the Irish kitchen and home interiors market. Return valid JSON only.' }],
+          parts: [{ text: 'You are a competitive intelligence analyst. Return ONLY a valid JSON array of competitor objects. Each object must have: name (string), website (string), rationale (string, max 20 words), category (string: direct|aspirational|regional), instagram (string, empty if unknown), facebook (string, empty if unknown), linkedin (string, empty if unknown).' }],
         },
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: {
-          maxOutputTokens: 2000,
-          temperature: 0.3,
+          maxOutputTokens: 8192,
+          temperature: 0.2,
           responseMimeType: 'application/json',
-          responseSchema: {
-            type: 'ARRAY',
-            items: {
-              type: 'OBJECT',
-              properties: {
-                name:      { type: 'STRING' },
-                website:   { type: 'STRING' },
-                rationale: { type: 'STRING' },
-                category:  { type: 'STRING' },
-                instagram: { type: 'STRING' },
-                facebook:  { type: 'STRING' },
-                linkedin:  { type: 'STRING' },
-              },
-              required: ['name', 'website', 'rationale', 'category'],
-            },
-          },
         },
       }),
     });
@@ -64,14 +45,21 @@ For each competitor return an object with fields: name, website, rationale, cate
     }
 
     const data = await r.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+    const text = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
 
     let competitors = [];
     try {
-      competitors = JSON.parse(text);
-      if (!Array.isArray(competitors)) competitors = [];
+      const parsed = JSON.parse(text);
+      competitors = Array.isArray(parsed) ? parsed : [];
     } catch (e) {
-      console.error('Discover JSON parse error:', e.message, 'text:', text.slice(0, 300));
+      // JSON mode should return valid JSON — if truncated, extract whatever completed objects we have
+      console.error('Discover parse error:', e.message, '| text length:', text.length);
+      try {
+        // Try to recover partial array by finding complete objects
+        const matches = [...text.matchAll(/\{[^{}]*"name"[^{}]*\}/g)];
+        competitors = matches.map(m => { try { return JSON.parse(m[0]); } catch { return null; } }).filter(Boolean);
+        console.log('Recovered', competitors.length, 'partial competitors');
+      } catch {}
     }
 
     return NextResponse.json({ competitors });

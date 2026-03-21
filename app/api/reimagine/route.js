@@ -71,20 +71,9 @@ Return fields: title (headline), content (full publish-ready text), metaDescript
         },
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: {
-          maxOutputTokens: 3000,
+          maxOutputTokens: 8192,
           temperature: 0.7,
           responseMimeType: 'application/json',
-          responseSchema: {
-            type: 'OBJECT',
-            properties: {
-              title:           { type: 'STRING' },
-              content:         { type: 'STRING' },
-              metaDescription: { type: 'STRING' },
-              hashtags:        { type: 'STRING' },
-              rationale:       { type: 'STRING' },
-            },
-            required: ['title', 'content', 'rationale'],
-          },
         },
       }),
     });
