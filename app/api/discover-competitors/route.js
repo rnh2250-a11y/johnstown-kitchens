@@ -2,30 +2,6 @@ import { NextResponse } from 'next/server';
 
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
-// Escape control characters ONLY inside JSON string literals using a state machine.
-// Structural whitespace (newlines between tokens) is left intact.
-function sanitizeJsonStrings(str) {
-  let result = '';
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < str.length; i++) {
-    const ch = str[i];
-    const code = ch.charCodeAt(0);
-    if (escaped) { result += ch; escaped = false; continue; }
-    if (ch === '\\' && inString) { escaped = true; result += ch; continue; }
-    if (ch === '"') { inString = !inString; result += ch; continue; }
-    if (inString && code < 0x20) {
-      if (ch === '\n') result += '\\n';
-      else if (ch === '\r') result += '\\r';
-      else if (ch === '\t') result += '\\t';
-      else result += '\\u' + code.toString(16).padStart(4, '0');
-      continue;
-    }
-    result += ch;
-  }
-  return result;
-}
-
 export async function POST(request) {
   try {
     const { website, brandName, industry, region, services } = await request.json();
@@ -42,32 +18,42 @@ export async function POST(request) {
 
     const prompt = `Find 6-10 real competitors for this business: ${context}
 
-Search the web to find companies that compete with this business. Look for:
-- Direct competitors in the same geographic area
-- Companies offering the same/similar services
-- Aspirational brands in the same industry the business might benchmark against
+Use your knowledge to identify companies that compete with this business:
+- Direct competitors in the same geographic area (Ireland/Tipperary)
+- Companies offering bespoke kitchen design and installation in Ireland
+- Aspirational kitchen brands Irish customers might compare against
 
-For each competitor found, return a JSON object with these exact fields:
-{
-  "name": "Company Name",
-  "website": "https://...",
-  "rationale": "1-2 sentences explaining why they are a competitor",
-  "category": "direct",
-  "instagram": "",
-  "facebook": "",
-  "linkedin": ""
-}
-
-Return ONLY a raw JSON array with no markdown formatting, no code fences, no explanation text. Just the array starting with [ and ending with ].`;
+For each competitor return an object with fields: name, website, rationale, category (direct/aspirational/regional), instagram, facebook, linkedin.`;
 
     const r = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: 'You are a competitive intelligence analyst. Search the web to find real competitors for the given business. Return ONLY a raw JSON array — no markdown, no code fences, no explanation. Start with [ and end with ].' }] },
+        systemInstruction: {
+          parts: [{ text: 'You are a competitive intelligence analyst specialising in the Irish kitchen and home interiors market. Return valid JSON only.' }],
+        },
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        tools: [{ googleSearch: {} }],
-        generationConfig: { maxOutputTokens: 2000, temperature: 0.3 },
+        generationConfig: {
+          maxOutputTokens: 2000,
+          temperature: 0.3,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                name:      { type: 'STRING' },
+                website:   { type: 'STRING' },
+                rationale: { type: 'STRING' },
+                category:  { type: 'STRING' },
+                instagram: { type: 'STRING' },
+                facebook:  { type: 'STRING' },
+                linkedin:  { type: 'STRING' },
+              },
+              required: ['name', 'website', 'rationale', 'category'],
+            },
+          },
+        },
       }),
     });
 
@@ -78,23 +64,14 @@ Return ONLY a raw JSON array with no markdown formatting, no code fences, no exp
     }
 
     const data = await r.json();
-    const parts = data.candidates?.[0]?.content?.parts || [];
-    const text = parts.filter(p => p.text).map(p => p.text).join('\n').trim();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
 
     let competitors = [];
-    // Strip markdown fences if present
-    const stripped = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-    const arrMatch = stripped.match(/\[[\s\S]*\]/);
-    if (arrMatch) {
-      try {
-        competitors = JSON.parse(sanitizeJsonStrings(arrMatch[0]));
-      } catch (e) {
-        console.error('JSON parse error after sanitize:', e.message);
-        // Last resort: try the raw match directly
-        try { competitors = JSON.parse(arrMatch[0]); } catch {}
-      }
-    } else {
-      console.warn('No JSON array found. Text:', text.slice(0, 500));
+    try {
+      competitors = JSON.parse(text);
+      if (!Array.isArray(competitors)) competitors = [];
+    } catch (e) {
+      console.error('Discover JSON parse error:', e.message, 'text:', text.slice(0, 300));
     }
 
     return NextResponse.json({ competitors });

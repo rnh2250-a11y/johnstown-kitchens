@@ -2,29 +2,6 @@ import { NextResponse } from 'next/server';
 
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
-// Escape control characters ONLY inside JSON string literals using a state machine.
-function sanitizeJsonStrings(str) {
-  let result = '';
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < str.length; i++) {
-    const ch = str[i];
-    const code = ch.charCodeAt(0);
-    if (escaped) { result += ch; escaped = false; continue; }
-    if (ch === '\\' && inString) { escaped = true; result += ch; continue; }
-    if (ch === '"') { inString = !inString; result += ch; continue; }
-    if (inString && code < 0x20) {
-      if (ch === '\n') result += '\\n';
-      else if (ch === '\r') result += '\\r';
-      else if (ch === '\t') result += '\\t';
-      else result += '\\u' + code.toString(16).padStart(4, '0');
-      continue;
-    }
-    result += ch;
-  }
-  return result;
-}
-
 export async function POST(request) {
   try {
     const { competitorContent, brandSettings } = await request.json();
@@ -71,10 +48,6 @@ export async function POST(request) {
       website: 'Write a website page section or landing page copy — benefit-led, clear headings.',
     }[sourceType] || 'Write a social media post suitable for the content type.';
 
-    const system = `You are a content writer. Your job is to reimagine competitor content in the client's own brand voice.
-Produce original, publish-ready content — not a paraphrase. Cover the same topic/angle but written entirely in the brand's style.
-Return ONLY a JSON object with these fields: title, content, metaDescription, hashtags, rationale.`;
-
     const prompt = `BRAND SETTINGS:
 ${brandContext}${examplesSection}
 
@@ -87,22 +60,32 @@ Content: ${competitorContent.content || ''}
 TASK: ${formatInstr}
 Write this entirely in the brand's voice — original content, not a rewrite. The topic/angle is what performed well; the content should be genuinely fresh.
 
-Return JSON:
-{
-  "title": "Suggested headline or post title",
-  "content": "The full publish-ready content",
-  "metaDescription": "SEO meta description (for blog/web content, else empty string)",
-  "hashtags": "#suggested #hashtags",
-  "rationale": "1-2 sentences explaining the strategic angle taken"
-}`;
+Return fields: title (headline), content (full publish-ready text), metaDescription (SEO description or empty), hashtags (space-separated or empty), rationale (1-2 sentences on strategic angle).`;
 
     const r = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: system }] },
+        systemInstruction: {
+          parts: [{ text: "You are a content writer. Reimagine competitor content in the client's brand voice. Produce original, publish-ready content." }],
+        },
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 3000, temperature: 0.7 },
+        generationConfig: {
+          maxOutputTokens: 3000,
+          temperature: 0.7,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'OBJECT',
+            properties: {
+              title:           { type: 'STRING' },
+              content:         { type: 'STRING' },
+              metaDescription: { type: 'STRING' },
+              hashtags:        { type: 'STRING' },
+              rationale:       { type: 'STRING' },
+            },
+            required: ['title', 'content', 'rationale'],
+          },
+        },
       }),
     });
 
@@ -113,18 +96,17 @@ Return JSON:
     }
 
     const data = await r.json();
-    const text = data.candidates?.[0]?.content?.parts?.filter(p => p.text).map(p => p.text).join('\n') || '';
-    const stripped = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-    const objMatch = stripped.match(/\{[\s\S]*\}/);
-    if (objMatch) {
-      try {
-        const result = JSON.parse(sanitizeJsonStrings(objMatch[0]));
-        return NextResponse.json({ result });
-      } catch (e) {
-        console.error('Reimagine JSON parse error:', e.message);
-      }
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+
+    let result;
+    try {
+      result = JSON.parse(text);
+    } catch (e) {
+      console.error('Reimagine parse error:', e.message);
+      result = { title: 'Reimagined Content', content: text, metaDescription: '', hashtags: '', rationale: '' };
     }
-    return NextResponse.json({ result: { title: 'Reimagined Content', content: text, metaDescription: '', hashtags: '', rationale: '' } });
+
+    return NextResponse.json({ result });
   } catch (err) {
     console.error('Reimagine error:', err);
     return NextResponse.json({ error: 'Failed' }, { status: 500 });
