@@ -66,7 +66,14 @@ Return ONLY a raw JSON array with no markdown formatting, no code fences, no exp
     const arrMatch = text.match(/\[[\s\S]*\]/);
     if (arrMatch) {
       try {
-        competitors = JSON.parse(arrMatch[0]);
+        // Remove control characters inside JSON string values that break JSON.parse
+        const cleaned = arrMatch[0].replace(/[\u0000-\u001F\u007F]/g, (c) => {
+          if (c === '\n') return '\\n';
+          if (c === '\r') return '\\r';
+          if (c === '\t') return '\\t';
+          return ' ';
+        });
+        competitors = JSON.parse(cleaned);
       } catch (e) {
         console.error('JSON parse error:', e.message, 'Raw match:', arrMatch[0].slice(0, 300));
       }

@@ -95,7 +95,8 @@ Return JSON:
     const objMatch = cleaned.match(/\{[\s\S]*\}/);
     if (objMatch) {
       try {
-        const result = JSON.parse(objMatch[0]);
+        const sanitized = objMatch[0].replace(/[\u0000-\u001F\u007F]/g, c => c === '\n' ? '\\n' : c === '\r' ? '\\r' : c === '\t' ? '\\t' : ' ');
+        const result = JSON.parse(sanitized);
         return NextResponse.json({ result });
       } catch {}
     }

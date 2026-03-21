@@ -59,7 +59,8 @@ Return a JSON array of 3-6 items. If you cannot find recent content, return [].`
       const arrMatch = cleaned.match(/\[[\s\S]*\]/);
       if (arrMatch) {
         try {
-          const items = JSON.parse(arrMatch[0]);
+          const sanitized = arrMatch[0].replace(/[\u0000-\u001F\u007F]/g, c => c === '\n' ? '\\n' : c === '\r' ? '\\r' : c === '\t' ? '\\t' : ' ');
+          const items = JSON.parse(sanitized);
           const content = items.map(item => ({ ...item, id: Math.random().toString(36).slice(2, 10), scannedAt: new Date().toISOString() }));
           return NextResponse.json({ content });
         } catch {}
