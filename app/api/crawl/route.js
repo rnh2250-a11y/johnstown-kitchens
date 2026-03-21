@@ -1,13 +1,15 @@
 import { NextResponse } from 'next/server';
 
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+
 // Accepts a single competitor object to avoid Vercel timeout.
 // The frontend calls this once per competitor and streams results progressively.
 export async function POST(request) {
   try {
     const { competitor } = await request.json();
     if (!competitor?.name) return NextResponse.json({ content: [] });
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: 'No API key' }, { status: 500 });
+    const apiKey = process.env.GOOGLE_AI_API_KEY;
+    if (!apiKey) return NextResponse.json({ error: 'No GOOGLE_AI_API_KEY set' }, { status: 500 });
 
     const comp = competitor;
     const targets = [comp.website, comp.instagram, comp.facebook, comp.linkedin].filter(Boolean).join(', ');
@@ -17,16 +19,7 @@ export async function POST(request) {
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) await new Promise(res => setTimeout(res, Math.pow(2, attempt) * 1000));
 
-      const r = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 2500,
-          system: 'You are a content intelligence analyst. Search the web for recent published content from the specified competitor. Return ONLY a valid JSON array. Be accurate and specific about what you find.',
-          messages: [{
-            role: 'user',
-            content: `Search for recent content published by "${comp.name}" (an Irish kitchen company). ${searchNote}
+      const prompt = `Search for recent content published by "${comp.name}" (an Irish kitchen company). ${searchNote}
 
 Find their latest blog posts, social media posts, and notable web pages published in the last 90 days.
 
@@ -44,9 +37,16 @@ For each piece of content found, return a JSON object:
   "performanceScore": 5
 }
 
-Return a JSON array of 3-6 items. If you cannot find recent content, return [].`
-          }],
-          tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+Return a JSON array of 3-6 items. If you cannot find recent content, return [].`;
+
+      const r = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: 'You are a content intelligence analyst. Search the web for recent published content from the specified competitor. Return ONLY a valid JSON array. Be accurate and specific about what you find.' }] },
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          tools: [{ googleSearch: {} }],
+          generationConfig: { maxOutputTokens: 2500, temperature: 0.3 },
         }),
       });
 
@@ -54,7 +54,7 @@ Return a JSON array of 3-6 items. If you cannot find recent content, return [].`
       if (!r.ok) break;
 
       const data = await r.json();
-      const text = data.content?.filter(b => b.type === 'text').map(b => b.text).join('\n') || '';
+      const text = data.candidates?.[0]?.content?.parts?.filter(p => p.text).map(p => p.text).join('\n') || '';
       let cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
       const arrMatch = cleaned.match(/\[[\s\S]*\]/);
       if (arrMatch) {

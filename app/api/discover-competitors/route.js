@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+
 export async function POST(request) {
   try {
     const { website, brandName, industry, region, services } = await request.json();
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: 'No API key' }, { status: 500 });
+    const apiKey = process.env.GOOGLE_AI_API_KEY;
+    if (!apiKey) return NextResponse.json({ error: 'No GOOGLE_AI_API_KEY set' }, { status: 500 });
 
     const context = [
       brandName && `Business: ${brandName}`,
@@ -14,16 +16,7 @@ export async function POST(request) {
       services && `Services: ${services}`,
     ].filter(Boolean).join('. ');
 
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 2000,
-        system: 'You are a competitive intelligence analyst. Search the web to find real competitors for the given business. Return ONLY a valid JSON array with accurate, real companies.',
-        messages: [{
-          role: 'user',
-          content: `Find 6-10 real competitors for this business: ${context}
+    const prompt = `Find 6-10 real competitors for this business: ${context}
 
 Search the web to find companies that compete with this business. Look for:
 - Direct competitors in the same geographic area
@@ -41,20 +34,27 @@ For each competitor found, return:
   "linkedin": ""
 }
 
-Return a JSON array. Only include real, verifiable companies you can find evidence of online.`
-        }],
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+Return a JSON array. Only include real, verifiable companies you can find evidence of online.`;
+
+    const r = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: 'You are a competitive intelligence analyst. Search the web to find real competitors for the given business. Return ONLY a valid JSON array with accurate, real companies.' }] },
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        tools: [{ googleSearch: {} }],
+        generationConfig: { maxOutputTokens: 2000, temperature: 0.3 },
       }),
     });
 
     if (!r.ok) {
       const e = await r.text();
-      console.error('Discover competitors error:', r.status, e);
-      return NextResponse.json({ error: `API ${r.status}` }, { status: 500 });
+      console.error('Gemini discover:', r.status, e);
+      return NextResponse.json({ error: `Gemini ${r.status}` }, { status: 500 });
     }
 
     const data = await r.json();
-    const text = data.content?.filter(b => b.type === 'text').map(b => b.text).join('\n') || '';
+    const text = data.candidates?.[0]?.content?.parts?.filter(p => p.text).map(p => p.text).join('\n') || '';
     let cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
     const arrMatch = cleaned.match(/\[[\s\S]*\]/);
     if (arrMatch) {

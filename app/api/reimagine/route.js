@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+
 export async function POST(request) {
   try {
     const { competitorContent, brandSettings } = await request.json();
     if (!competitorContent) return NextResponse.json({ error: 'Missing content' }, { status: 400 });
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: 'No API key' }, { status: 500 });
+    const apiKey = process.env.GOOGLE_AI_API_KEY;
+    if (!apiKey) return NextResponse.json({ error: 'No GOOGLE_AI_API_KEY set' }, { status: 500 });
 
     const {
       brandName = '',
@@ -46,18 +48,11 @@ export async function POST(request) {
       website: 'Write a website page section or landing page copy — benefit-led, clear headings.',
     }[sourceType] || 'Write a social media post suitable for the content type.';
 
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 3000,
-        system: `You are a content writer. Your job is to reimagine competitor content in the client's own brand voice.
+    const system = `You are a content writer. Your job is to reimagine competitor content in the client's own brand voice.
 Produce original, publish-ready content — not a paraphrase. Cover the same topic/angle but written entirely in the brand's style.
-Return ONLY a JSON object with these fields: title, content, metaDescription, hashtags, rationale.`,
-        messages: [{
-          role: 'user',
-          content: `BRAND SETTINGS:
+Return ONLY a JSON object with these fields: title, content, metaDescription, hashtags, rationale.`;
+
+    const prompt = `BRAND SETTINGS:
 ${brandContext}${examplesSection}
 
 COMPETITOR CONTENT TO REIMAGINE:
@@ -76,19 +71,26 @@ Return JSON:
   "metaDescription": "SEO meta description (for blog/web content, else empty string)",
   "hashtags": "#suggested #hashtags",
   "rationale": "1-2 sentences explaining the strategic angle taken"
-}`
-        }],
+}`;
+
+    const r = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 3000, temperature: 0.7 },
       }),
     });
 
     if (!r.ok) {
       const e = await r.text();
-      console.error('Reimagine error:', r.status, e);
-      return NextResponse.json({ error: `API ${r.status}` }, { status: 500 });
+      console.error('Gemini reimagine:', r.status, e);
+      return NextResponse.json({ error: `Gemini ${r.status}` }, { status: 500 });
     }
 
     const data = await r.json();
-    const text = data.content?.filter(b => b.type === 'text').map(b => b.text).join('\n') || '';
+    const text = data.candidates?.[0]?.content?.parts?.filter(p => p.text).map(p => p.text).join('\n') || '';
     let cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
     const objMatch = cleaned.match(/\{[\s\S]*\}/);
     if (objMatch) {
@@ -97,7 +99,6 @@ Return JSON:
         return NextResponse.json({ result });
       } catch {}
     }
-    // Fallback: return raw text
     return NextResponse.json({ result: { title: 'Reimagined Content', content: text, metaDescription: '', hashtags: '', rationale: '' } });
   } catch (err) {
     console.error('Reimagine error:', err);
