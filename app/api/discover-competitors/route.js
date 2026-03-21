@@ -8,32 +8,36 @@ export async function POST(request) {
     const apiKey = process.env.GOOGLE_AI_API_KEY;
     if (!apiKey) return NextResponse.json({ error: 'No GOOGLE_AI_API_KEY set' }, { status: 500 });
 
-    const context = [
-      brandName && `Business: ${brandName}`,
-      website && `Website: ${website}`,
-      industry && `Industry: ${industry}`,
-      region && `Region: ${region}`,
-      services && `Services: ${services}`,
-    ].filter(Boolean).join('. ');
+    const prompt = `Search the web right now to find REAL, verifiable competitors for this business:
+Business: ${brandName}
+Website: ${website}
+Industry: ${industry}
+Region: ${region}
+Services: ${services}
 
-    const prompt = `List 6 to 8 real competitors for this Irish kitchen business: ${context}
+CRITICAL RULES:
+- Only include businesses that ACTUALLY EXIST and you can verify from search results
+- Do NOT invent or hallucinate company names or websites
+- Only include a website URL if you found it in search results — leave it empty string if unsure
+- If you cannot find enough real local competitors, include fewer results rather than fabricating any
 
-Include direct local competitors, other Irish kitchen companies, and 1-2 aspirational brands.
-For each, provide: company name, website URL, one sentence rationale, and category (direct/aspirational/regional).
-Keep rationale to ONE short sentence only. Keep all text fields very brief.`;
+Find 5-8 real competitors across these categories:
+- direct: Real local/regional kitchen companies competing for the same customers in Tipperary/Munster
+- regional: Established Irish kitchen brands operating nationally
+- aspirational: High-profile UK/international bespoke kitchen brands that set the market standard
+
+Return ONLY a JSON array with no other text. Each item:
+{"name":"<real company name>","website":"<verified URL or empty string>","rationale":"<one sentence why they compete>","category":"direct|regional|aspirational","instagram":"","facebook":"","linkedin":""}`;
 
     const r = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        systemInstruction: {
-          parts: [{ text: 'You are a competitive intelligence analyst. Return ONLY a valid JSON array of competitor objects. Each object must have: name (string), website (string), rationale (string, max 20 words), category (string: direct|aspirational|regional), instagram (string, empty if unknown), facebook (string, empty if unknown), linkedin (string, empty if unknown).' }],
-        },
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        tools: [{ googleSearch: {} }],
         generationConfig: {
           maxOutputTokens: 8192,
-          temperature: 0.2,
-          responseMimeType: 'application/json',
+          temperature: 0.1,
         },
       }),
     });
@@ -45,22 +49,25 @@ Keep rationale to ONE short sentence only. Keep all text fields very brief.`;
     }
 
     const data = await r.json();
-    const text = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+
+    // With googleSearch tool, response is plain text — extract the JSON array from it
+    const text = (data.candidates?.[0]?.content?.parts || [])
+      .filter(p => p.text)
+      .map(p => p.text)
+      .join('');
 
     let competitors = [];
     try {
-      const parsed = JSON.parse(text);
-      competitors = Array.isArray(parsed) ? parsed : [];
+      // Strip markdown fences
+      const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+      const arrMatch = cleaned.match(/\[[\s\S]*\]/);
+      if (arrMatch) competitors = JSON.parse(arrMatch[0]);
     } catch (e) {
-      // JSON mode should return valid JSON — if truncated, extract whatever completed objects we have
-      console.error('Discover parse error:', e.message, '| text length:', text.length);
-      try {
-        // Try to recover partial array by finding complete objects
-        const matches = [...text.matchAll(/\{[^{}]*"name"[^{}]*\}/g)];
-        competitors = matches.map(m => { try { return JSON.parse(m[0]); } catch { return null; } }).filter(Boolean);
-        console.log('Recovered', competitors.length, 'partial competitors');
-      } catch {}
+      console.error('Discover parse error:', e.message, '| text snippet:', text.slice(0, 300));
     }
+
+    // Filter out any with obviously fabricated/empty names
+    competitors = competitors.filter(c => c.name && c.name.trim().length > 1);
 
     return NextResponse.json({ competitors });
   } catch (err) {
