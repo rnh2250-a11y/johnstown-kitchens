@@ -50,7 +50,7 @@ export async function POST(request) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 3000,
         system: `You are a content writer. Your job is to reimagine competitor content in the client's own brand voice.
 Produce original, publish-ready content — not a paraphrase. Cover the same topic/angle but written entirely in the brand's style.

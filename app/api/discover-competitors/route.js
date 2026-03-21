@@ -18,7 +18,7 @@ export async function POST(request) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 2000,
         system: 'You are a competitive intelligence analyst. Search the web to find real competitors for the given business. Return ONLY a valid JSON array with accurate, real companies.',
         messages: [{
