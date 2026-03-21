@@ -20,6 +20,9 @@ const COMP_CATS = { direct: { label: 'Direct', color: B.burgundy }, aspirational
 const DEFAULT_BRAND = { website: 'https://www.johnstownkitchens.ie', facebook: '', instagram: '', pinterest: '', linkedin: '', phone: '', email: 'bob@johnstownkitchens.ie', address: 'Puckane, Nenagh, Co. Tipperary', tagline: 'Designs for real life', cta: 'Book a free consultation' };
 const DEFAULT_COMPS = [{ name: 'Noel Dempsey Kitchens', category: 'direct' }, { name: 'McGowan Fitted Kitchens', category: 'direct' }, { name: 'Celtic Interiors', category: 'regional' }, { name: "O'Connor Kitchens", category: 'regional' }];
 
+const CONTENT_FORMATS = ['Long-form articles', 'Short posts', 'Listicles', 'How-to guides', 'Thought leadership', 'Behind the scenes', 'Case studies', 'Product showcases'];
+const DEFAULT_BRAND_STYLE = { toneOfVoice: 'warm, honest and approachable — like a trusted local expert, never pushy or salesy', voiceGuidelines: 'Bob speaks from personal experience. First-person is fine. Uses plain language, avoids jargon. Focuses on real outcomes for real families. Honest about timelines and costs.', targetAudience: 'Homeowners in Tipperary and surrounding counties planning a kitchen renovation, typically aged 35-60, family-focused, quality-conscious', exampleContent: ['', '', ''], topicsToAvoid: 'Discount deals, price wars, political opinions', preferredFormats: ['Short posts', 'Behind the scenes', 'Case studies'] };
+
 const BIZ = `Johnstown Kitchens — bespoke kitchen design, Puckane, Nenagh, Co. Tipperary, Ireland. Bob Schweitnitz. German precision, Irish warmth. Custom kitchens, never flat-pack. "Designs for real life". Free consultations. Cabinetry from €12k. Appliances: Bora, Miele, Neff, Siemens, Bosch, Quooker. Worktops: Silestone, Dekton, Caesarstone, Corian. Tone: warm, benefit-focused, transparent. Never pushy.`;
 
 const SEASONAL = [
@@ -84,7 +87,7 @@ function Card({ children, style }) { return <div style={{ background: B.white, b
 function Sec({ title, sub, children, action }) { return <div style={{ marginBottom: 28 }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}><div><h2 style={{ margin: 0, fontSize: 19, fontWeight: 400, color: B.dark, fontFamily: "'Cormorant',Georgia,serif" }}>{title}</h2>{sub && <p style={{ margin: '2px 0 0', fontSize: 12, color: B.sage }}>{sub}</p>}</div>{action}</div>{children}</div>; }
 
 // ═══ CREATE POST MODAL ═══
-function CreateModal({ onClose, onSave, platforms, pillars, initialIdea, brand }) {
+function CreateModal({ onClose, onSave, platforms, pillars, initialIdea, brand, brandStyle }) {
   const [idea, setIdea] = useState(initialIdea || '');
   const [audience, setAudience] = useState('General');
   const [pillar, setPillar] = useState(pillars[0] || '');
@@ -99,7 +102,7 @@ function CreateModal({ onClose, onSave, platforms, pillars, initialIdea, brand }
     if (!idea.trim()) return;
     setGenerating(true); setError(''); setResults(null);
     try {
-      const brandInfo = brand?.cta ? `\nDefault CTA: "${brand.cta}". Website: ${brand.website || ''}` : '';
+      const brandInfo = [brand?.cta && `Default CTA: "${brand.cta}"`, brand?.website && `Website: ${brand.website}`, brandStyle?.toneOfVoice && `Tone: ${brandStyle.toneOfVoice}`, brandStyle?.voiceGuidelines && `Voice: ${brandStyle.voiceGuidelines}`, brandStyle?.targetAudience && `Audience: ${brandStyle.targetAudience}`].filter(Boolean).join('. ');
       const platNames = plats.map(p => ALL_PLATFORMS.find(x => x.id === p)?.label || p).join(', ');
 
       // Generate one platform at a time for reliability
@@ -174,6 +177,81 @@ function CreateModal({ onClose, onSave, platforms, pillars, initialIdea, brand }
   );
 }
 
+// ═══ REIMAGINE MODAL ═══
+function ReimagineModal({ posts, brandStyle, brand, onClose, onSave }) {
+  const isBulk = Array.isArray(posts);
+  const items = isBulk ? posts : [posts];
+  const [results, setResults] = useState([]);
+  const [generating, setGenerating] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState({});
+
+  const brandSettings = { ...brand, toneOfVoice: brandStyle.toneOfVoice, voiceGuidelines: brandStyle.voiceGuidelines, targetAudience: brandStyle.targetAudience, exampleContent: brandStyle.exampleContent, topicsToAvoid: brandStyle.topicsToAvoid, preferredFormats: brandStyle.preferredFormats };
+
+  const generate = async (monitorItems) => {
+    setGenerating(true); setError(''); setResults([]);
+    const all = [];
+    for (let i = 0; i < monitorItems.length; i++) {
+      setCurrent(i + 1);
+      try {
+        const r = await fetch('/api/reimagine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ competitorContent: monitorItems[i], brandSettings }) });
+        const d = await r.json();
+        if (d.result) all.push({ ...d.result, sourceItem: monitorItems[i], id: Math.random().toString(36).slice(2, 8) });
+        else setError(d.error || 'Generation failed');
+      } catch (e) { setError(e.message); }
+    }
+    setResults(all);
+    setGenerating(false);
+  };
+
+  useEffect(() => { generate(items); }, []);
+
+  const copy = (id, text) => { navigator.clipboard.writeText(text); setCopied(c => ({ ...c, [id]: true })); setTimeout(() => setCopied(c => ({ ...c, [id]: false })), 2000); };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: B.white, borderRadius: 3, width: '100%', maxWidth: 860, maxHeight: '92vh', overflow: 'auto', padding: 28 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 18 }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, fontFamily: "'Cormorant',Georgia,serif" }}>✦ Reimagine</h3>
+            <p style={{ margin: '2px 0 0', fontSize: 11, color: B.sage }}>Rewriting {items.length} piece{items.length > 1 ? 's' : ''} in your brand voice</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: B.sage }}>×</button>
+        </div>
+
+        {generating && (
+          <div style={{ textAlign: 'center', padding: 32 }}>
+            <Sp sz={28} />
+            <p style={{ margin: '14px 0 0', fontSize: 13, color: B.brown }}>Generating {isBulk ? `${current} of ${items.length}` : ''}...</p>
+          </div>
+        )}
+
+        {error && <p style={{ color: B.burgundy, fontSize: 13, marginBottom: 12 }}>{error}</p>}
+
+        {results.map((r, i) => (
+          <div key={r.id} style={{ marginBottom: 20, padding: 16, border: `1px solid ${B.sand}50`, borderRadius: 2 }}>
+            {isBulk && <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, color: B.sage, textTransform: 'uppercase', fontFamily: "'Montserrat',sans-serif" }}>From: {r.sourceItem?.competitor} — {r.sourceItem?.title}</p>}
+            <h4 style={{ margin: '0 0 8px', fontSize: 16, fontFamily: "'Cormorant',Georgia,serif" }}>{r.title}</h4>
+            {r.metaDescription && <div style={{ padding: '6px 10px', background: B.cream, borderRadius: 2, marginBottom: 8, fontSize: 11, color: B.brown }}><strong>Meta:</strong> {r.metaDescription}</div>}
+            <p style={{ margin: '0 0 8px', fontSize: 13, color: B.dark, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{r.content}</p>
+            {r.hashtags && <p style={{ margin: '0 0 8px', fontSize: 11, color: B.burgundy }}>{r.hashtags}</p>}
+            {r.rationale && <p style={{ margin: '0 0 10px', fontSize: 11, color: B.sage, fontStyle: 'italic' }}>💡 {r.rationale}</p>}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button className="jk-btn" onClick={() => copy(r.id, r.content + (r.hashtags ? '\n\n' + r.hashtags : ''))} style={{ background: B.white, color: B.dark, border: `1px solid ${B.sand}` }}>{copied[r.id] ? '✓ Copied!' : 'Copy'}</button>
+              <button className="jk-btn" onClick={() => onSave({ platform: r.sourceItem?.source || 'facebook', content: r.content, hashtags: r.hashtags || '', state: 'Draft', created_at: new Date().toISOString() })} style={{ background: B.burgundy, color: B.white }}>💾 Save as Draft</button>
+            </div>
+          </div>
+        ))}
+
+        {results.length > 1 && (
+          <button className="jk-btn" onClick={() => results.forEach(r => onSave({ platform: r.sourceItem?.source || 'facebook', content: r.content, hashtags: r.hashtags || '', state: 'Draft', created_at: new Date().toISOString() }))} style={{ background: B.burgundy, color: B.white, width: '100%', justifyContent: 'center', padding: 12 }}>💾 Save All {results.length} as Drafts</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ═══ MAIN APP ═══
 export default function Page() {
   const supabase = createClient();
@@ -202,6 +280,20 @@ export default function Page() {
   const [pexelsQ, setPexelsQ] = useState('');
   const [pexelsResults, setPexelsResults] = useState([]);
   const [pexelsLoading, setPexelsLoading] = useState(false);
+  const [brandStyle, setBrandStyle] = useState(DEFAULT_BRAND_STYLE);
+  const [monitorContent, setMonitorContent] = useState([]);
+  const [crawlProgress, setCrawlProgress] = useState(null); // null | { current, total, name }
+  const [discoveredComps, setDiscoveredComps] = useState([]);
+  const [discovering, setDiscovering] = useState(false);
+  const [newCompWebsite, setNewCompWebsite] = useState('');
+  const [newCompIG, setNewCompIG] = useState('');
+  const [newCompFB, setNewCompFB] = useState('');
+  const [newCompLI, setNewCompLI] = useState('');
+  const [newCompNotes, setNewCompNotes] = useState('');
+  const [monitorFilter, setMonitorFilter] = useState({ comp: 'all', type: 'all', minScore: 0 });
+  const [showReimagine, setShowReimagine] = useState(false);
+  const [reimaginePost, setReimaginePost] = useState(null);
+  const [bulkSelected, setBulkSelected] = useState([]);
 
   const sl = (k, v) => setLd(p => ({ ...p, [k]: v }));
 
@@ -219,6 +311,9 @@ export default function Page() {
     setBrand(L.get('brand', DEFAULT_BRAND));
     setDynEvents(L.get('dynEvents', []));
     setEventsScanDate(L.get('eventsScanDate', null));
+    setBrandStyle(L.get('brandStyle', DEFAULT_BRAND_STYLE));
+    setMonitorContent(L.get('monitorContent', []));
+    setDiscoveredComps(L.get('discoveredComps', []));
     setReady(true);
   }, []);
 
@@ -227,6 +322,9 @@ export default function Page() {
   useEffect(() => { if (ready) L.set('pillars', pillars); }, [pillars, ready]);
   useEffect(() => { if (ready) L.set('savedPosts', savedPosts); }, [savedPosts, ready]);
   useEffect(() => { if (ready) L.set('brand', brand); }, [brand, ready]);
+  useEffect(() => { if (ready) L.set('brandStyle', brandStyle); }, [brandStyle, ready]);
+  useEffect(() => { if (ready) L.set('monitorContent', monitorContent); }, [monitorContent, ready]);
+  useEffect(() => { if (ready) L.set('discoveredComps', discoveredComps); }, [discoveredComps, ready]);
 
   const now = new Date();
   const allEvents = [...SEASONAL.map(e => ({ ...e, src: 'pre' })), ...dynEvents.map(e => ({ ...e, src: 'disc' }))];
@@ -275,7 +373,8 @@ export default function Page() {
     sl('schedule', true);
     try {
       const pl = activePlatforms.filter(p => p !== 'blog');
-      const r = await callJSON(`Strategist for Johnstown Kitchens. ${BIZ} Return ONLY a JSON array.`, `Weekly content schedule. Platforms: ${pl.join(', ')}. ${trends ? 'Trends: ' + JSON.stringify(trends.slice(0, 3)) : ''} ${topics ? 'Topics: ' + topics : ''}\nPillars: ${pillars.join(', ')}.\nGenerate one post per platform. Each: {"day":"Monday","time":"10:00 AM","platform":"facebook","title":"...","content":"Full post ready to publish","hashtags":"#tags","pillar":"...","rationale":"Why this post"}`);
+      const styleCtx = [brandStyle?.toneOfVoice && `Tone: ${brandStyle.toneOfVoice}`, brandStyle?.targetAudience && `Audience: ${brandStyle.targetAudience}`, brandStyle?.voiceGuidelines && `Voice: ${brandStyle.voiceGuidelines}`].filter(Boolean).join('\n');
+      const r = await callJSON(`Strategist for Johnstown Kitchens. ${BIZ}\n${styleCtx} Return ONLY a JSON array.`, `Weekly content schedule. Platforms: ${pl.join(', ')}. ${trends ? 'Trends: ' + JSON.stringify(trends.slice(0, 3)) : ''} ${topics ? 'Topics: ' + topics : ''}\nPillars: ${pillars.join(', ')}.\nGenerate one post per platform. Each: {"day":"Monday","time":"10:00 AM","platform":"facebook","title":"...","content":"Full post ready to publish","hashtags":"#tags","pillar":"...","rationale":"Why this post"}`);
       setSchedule(r); L.set('schedule', r);
     } catch (e) { console.error(e); setSchedule([{ day: 'Error', platform: 'facebook', title: 'Failed', content: e.message }]); }
     sl('schedule', false);
@@ -298,11 +397,43 @@ export default function Page() {
     setPexelsLoading(false);
   };
 
+  // Progressive monitor scan — one competitor at a time to avoid timeout
+  const scanMonitor = async (compsToScan) => {
+    const list = compsToScan || comps;
+    if (!list.length) return;
+    setMonitorContent([]);
+    for (let i = 0; i < list.length; i++) {
+      const comp = list[i];
+      setCrawlProgress({ current: i + 1, total: list.length, name: comp.name });
+      try {
+        const r = await fetch('/api/crawl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ competitor: comp }) });
+        const d = await r.json();
+        if (d.content?.length) setMonitorContent(prev => { const next = [...prev, ...d.content].sort((a, b) => (b.performanceScore || 0) - (a.performanceScore || 0)); L.set('monitorContent', next); return next; });
+      } catch (e) { console.error('Monitor scan error:', e); }
+    }
+    setCrawlProgress(null);
+  };
+
+  const discoverComps = async () => {
+    setDiscovering(true);
+    try {
+      const r = await fetch('/api/discover-competitors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ website: brand.website, brandName: 'Johnstown Kitchens', industry: 'Bespoke kitchen design', region: 'Tipperary, Ireland', services: 'Custom kitchens, cabinetry, kitchen design' }) });
+      const d = await r.json();
+      if (d.competitors?.length) { setDiscoveredComps(d.competitors); L.set('discoveredComps', d.competitors); }
+    } catch (e) { console.error('Discover error:', e); }
+    setDiscovering(false);
+  };
+
+  const addDiscoveredComp = (dc) => {
+    if (!comps.find(c => c.name === dc.name)) setComps(prev => [...prev, { name: dc.name, category: dc.category || 'direct', website: dc.website || '', instagram: dc.instagram || '', facebook: dc.facebook || '', linkedin: dc.linkedin || '', notes: dc.rationale || '' }]);
+    setDiscoveredComps(prev => prev.filter(d => d.name !== dc.name));
+  };
+
   const fullScan = async () => { await scanTrends(); await scanComps(); await genSchedule(); };
   const scanning = ld.trends || ld.comps || ld.schedule;
   const logout = async () => { await supabase.auth.signOut(); window.location.href = '/login'; };
   const addSaved = (posts) => setSavedPosts(p => [...posts, ...p]);
-  const addComp = () => { if (newC.trim()) { setComps([...comps, { name: newC.trim(), category: newCCat }]); setNewC(''); } };
+  const addComp = () => { if (newC.trim()) { setComps([...comps, { name: newC.trim(), category: newCCat, website: newCompWebsite.trim(), instagram: newCompIG.trim(), facebook: newCompFB.trim(), linkedin: newCompLI.trim(), notes: newCompNotes.trim() }]); setNewC(''); setNewCompWebsite(''); setNewCompIG(''); setNewCompFB(''); setNewCompLI(''); setNewCompNotes(''); } };
 
   const exportCSV = () => {
     if (!schedule) return;
@@ -311,7 +442,7 @@ export default function Page() {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows.join('\n')], { type: 'text/csv' })); a.download = `jk-${now.toISOString().split('T')[0]}.csv`; a.click();
   };
 
-  const allTabs = [{ id: 'dashboard', l: 'Dashboard' }, { id: 'competitors', l: 'Competitors' }, { id: 'schedule', l: 'Calendar' }, { id: 'library', l: 'Saved' }, { id: 'images', l: 'Images' }, { id: 'blog', l: 'Blog' }, { id: 'settings', l: 'Settings' }];
+  const allTabs = [{ id: 'dashboard', l: 'Dashboard' }, { id: 'competitors', l: 'Competitors' }, { id: 'monitor', l: 'Monitor' }, { id: 'schedule', l: 'Calendar' }, { id: 'library', l: 'Saved' }, { id: 'images', l: 'Images' }, { id: 'blog', l: 'Blog' }, { id: 'settings', l: 'Settings' }];
 
   if (!ready) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: B.warmWhite }}><Sp sz={24} /></div>;
 
@@ -408,19 +539,64 @@ export default function Page() {
 
         {/* ═══ COMPETITORS ═══ */}
         {tab === 'competitors' && (<>
-          <Card style={{ marginBottom: 16, background: B.cream }}>
-            <label style={{ fontSize: 9, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 4, display: 'block' }}>Add a competitor</label>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <input className="jk-input" style={{ flex: '1 1 200px' }} placeholder="Company name..." value={newC} onChange={e => setNewC(e.target.value)} onKeyDown={e => e.key === 'Enter' && addComp()} />
-              <select className="jk-input" style={{ width: 'auto' }} value={newCCat} onChange={e => setNewCCat(e.target.value)}>{Object.entries(COMP_CATS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
-              <button className="jk-btn" style={{ background: B.burgundy, color: B.cream }} onClick={addComp}>Add</button>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-              {comps.map((c, i) => <span key={i} className="jk-chip">{c.name} <span style={{ fontSize: 9, fontWeight: 700, color: (COMP_CATS[c.category] || {}).color, textTransform: 'uppercase' }}>{c.category}</span><button onClick={() => setComps(comps.filter((_, j) => j !== i))}>×</button></span>)}
-            </div>
-          </Card>
+          {/* Auto-discovery */}
+          <Sec title="Auto-Discover Competitors" sub="AI searches the web to find your competitors based on your business profile" action={<button className="jk-btn" onClick={discoverComps} disabled={discovering} style={{ background: B.burgundy, color: B.white }}>{discovering ? <><Sp light sz={12} /> Searching...</> : 'Discover'}</button>}>
+            {discoveredComps.length > 0 ? discoveredComps.map((dc, i) => (
+              <Card key={i} style={{ marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                    <strong style={{ fontSize: 13 }}>{dc.name}</strong>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: (COMP_CATS[dc.category] || {}).color || B.brown, background: `${(COMP_CATS[dc.category] || {}).color || B.brown}12`, padding: '1px 5px', borderRadius: 2, textTransform: 'uppercase' }}>{dc.category}</span>
+                  </div>
+                  {dc.website && <p style={{ margin: '0 0 2px', fontSize: 11, color: B.burgundy }}>{dc.website}</p>}
+                  <p style={{ margin: 0, fontSize: 12, color: B.brown }}>{dc.rationale}</p>
+                </div>
+                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                  <button className="jk-btn-sm" onClick={() => addDiscoveredComp(dc)} style={{ color: B.burgundy, borderColor: B.burgundy }}>+ Add</button>
+                  <button className="jk-btn-sm" onClick={() => setDiscoveredComps(prev => prev.filter((_, j) => j !== i))}>Dismiss</button>
+                </div>
+              </Card>
+            )) : <Card><p style={{ margin: 0, color: B.sage, textAlign: 'center', padding: 16, fontSize: 12 }}>Click Discover to find competitors automatically, or add them manually below.</p></Card>}
+          </Sec>
 
-          <Sec title="Competitor Analysis" sub="All engagement estimated from public signals" action={<button className="jk-btn" style={{ background: B.burgundy, color: B.white }} onClick={scanComps} disabled={ld.comps}>{ld.comps ? 'Scanning...' : 'Scan Competitors'}</button>}>
+          {/* Manual entry */}
+          <Sec title="Add Competitor Manually">
+            <Card style={{ background: B.cream }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 10, marginBottom: 10 }}>
+                <div><label style={{ display: 'block', fontSize: 9, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 3 }}>Company Name *</label><input className="jk-input" placeholder="e.g. Noel Dempsey Kitchens" value={newC} onChange={e => setNewC(e.target.value)} onKeyDown={e => e.key === 'Enter' && addComp()} /></div>
+                <div><label style={{ display: 'block', fontSize: 9, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 3 }}>Category</label><select className="jk-input" value={newCCat} onChange={e => setNewCCat(e.target.value)}>{Object.entries(COMP_CATS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
+                <div><label style={{ display: 'block', fontSize: 9, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 3 }}>Website</label><input className="jk-input" placeholder="https://..." value={newCompWebsite} onChange={e => setNewCompWebsite(e.target.value)} /></div>
+                <div><label style={{ display: 'block', fontSize: 9, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 3 }}>Instagram URL</label><input className="jk-input" placeholder="https://instagram.com/..." value={newCompIG} onChange={e => setNewCompIG(e.target.value)} /></div>
+                <div><label style={{ display: 'block', fontSize: 9, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 3 }}>Facebook URL</label><input className="jk-input" placeholder="https://facebook.com/..." value={newCompFB} onChange={e => setNewCompFB(e.target.value)} /></div>
+                <div><label style={{ display: 'block', fontSize: 9, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 3 }}>LinkedIn URL</label><input className="jk-input" placeholder="https://linkedin.com/..." value={newCompLI} onChange={e => setNewCompLI(e.target.value)} /></div>
+              </div>
+              <div style={{ marginBottom: 10 }}><label style={{ display: 'block', fontSize: 9, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 3 }}>Notes (optional)</label><input className="jk-input" placeholder="e.g. Direct competitor in UK market" value={newCompNotes} onChange={e => setNewCompNotes(e.target.value)} /></div>
+              <button className="jk-btn" style={{ background: B.burgundy, color: B.cream }} onClick={addComp} disabled={!newC.trim()}>Add Competitor</button>
+            </Card>
+          </Sec>
+
+          <Sec title="Monitored Competitors" sub={`${comps.length} competitor${comps.length !== 1 ? 's' : ''} — go to Monitor tab to scan content`}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 8 }}>
+              {comps.map((c, i) => (
+                <Card key={i} style={{ padding: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                        <strong style={{ fontSize: 12, fontFamily: "'Montserrat',sans-serif" }}>{c.name}</strong>
+                        <span style={{ fontSize: 9, fontWeight: 700, color: (COMP_CATS[c.category] || {}).color || B.brown, textTransform: 'uppercase' }}>{c.category}</span>
+                      </div>
+                      {c.website && <p style={{ margin: '0 0 1px', fontSize: 10, color: B.burgundy }}>{c.website}</p>}
+                      {c.notes && <p style={{ margin: '0', fontSize: 10, color: B.sage, fontStyle: 'italic' }}>{c.notes}</p>}
+                    </div>
+                    <button onClick={() => setComps(comps.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: B.burgundy, cursor: 'pointer', fontSize: 16 }}>×</button>
+                  </div>
+                </Card>
+              ))}
+              {!comps.length && <Card><p style={{ margin: 0, color: B.sage, fontSize: 12, padding: 8 }}>No competitors added yet.</p></Card>}
+            </div>
+          </Sec>
+
+          <Sec title="Social Media Analysis" sub="All engagement estimated from public signals" action={<button className="jk-btn" style={{ background: B.burgundy, color: B.white }} onClick={scanComps} disabled={ld.comps}>{ld.comps ? 'Scanning...' : 'Scan Competitors'}</button>}>
             {ld.comps ? <SkelList n={5} /> : compResults ? compResults.map((comp, ci) => (
               <Card key={ci} style={{ marginBottom: 10 }}>
                 <h3 style={{ margin: '0 0 8px', fontSize: 15, fontWeight: 600, fontFamily: "'Montserrat',sans-serif" }}>{comp.competitor}</h3>
@@ -446,6 +622,92 @@ export default function Page() {
               </Card>
             )) : <Card><p style={{ margin: 0, color: B.sage, textAlign: 'center', padding: 24 }}>Add competitors and run a scan</p></Card>}
           </Sec>
+        </>)}
+
+        {/* ═══ MONITOR ═══ */}
+        {tab === 'monitor' && (<>
+          {/* Scan controls */}
+          <Card style={{ marginBottom: 16, background: B.cream }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+              <div>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 600, fontFamily: "'Montserrat',sans-serif" }}>Content Monitoring</p>
+                <p style={{ margin: '2px 0 0', fontSize: 11, color: B.sage }}>Scans competitors one at a time — results appear as each completes</p>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {monitorContent.length > 0 && <button className="jk-btn" onClick={() => { setMonitorContent([]); L.set('monitorContent', []); }} style={{ background: B.white, color: B.brown, border: `1px solid ${B.sand}` }}>Clear</button>}
+                <button className="jk-btn" onClick={() => scanMonitor()} disabled={!!crawlProgress} style={{ background: B.burgundy, color: B.white }}>
+                  {crawlProgress ? <><Sp light sz={12} /> {crawlProgress.name} ({crawlProgress.current}/{crawlProgress.total})</> : 'Scan All Competitors'}
+                </button>
+              </div>
+            </div>
+            {bulkSelected.length > 0 && (
+              <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 12, color: B.brown }}>{bulkSelected.length} selected</span>
+                <button className="jk-btn" style={{ background: B.burgundy, color: B.white }} onClick={() => { setReimaginePost(bulkSelected); setShowReimagine(true); }}>Reimagine Selected ({bulkSelected.length})</button>
+                <button className="jk-btn-sm" onClick={() => setBulkSelected([])}>Clear selection</button>
+              </div>
+            )}
+          </Card>
+
+          {/* Filters */}
+          {monitorContent.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select className="jk-input" style={{ width: 'auto', fontSize: 11 }} value={monitorFilter.comp} onChange={e => setMonitorFilter(f => ({ ...f, comp: e.target.value }))}>
+                <option value="all">All competitors</option>
+                {[...new Set(monitorContent.map(c => c.competitor))].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <select className="jk-input" style={{ width: 'auto', fontSize: 11 }} value={monitorFilter.type} onChange={e => setMonitorFilter(f => ({ ...f, type: e.target.value }))}>
+                <option value="all">All types</option>
+                {['blog', 'instagram', 'facebook', 'linkedin', 'website'].map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <select className="jk-input" style={{ width: 'auto', fontSize: 11 }} value={monitorFilter.minScore} onChange={e => setMonitorFilter(f => ({ ...f, minScore: Number(e.target.value) }))}>
+                <option value={0}>Any score</option>
+                <option value={4}>Score 4+</option>
+                <option value={6}>Score 6+</option>
+                <option value={8}>Score 8+</option>
+              </select>
+              <span style={{ fontSize: 11, color: B.sage, marginLeft: 4 }}>
+                {monitorContent.filter(c => (monitorFilter.comp === 'all' || c.competitor === monitorFilter.comp) && (monitorFilter.type === 'all' || c.source === monitorFilter.type) && (c.performanceScore || 0) >= monitorFilter.minScore).length} results
+              </span>
+            </div>
+          )}
+
+          {/* Content cards */}
+          {crawlProgress && !monitorContent.length && <SkelList n={4} />}
+          {monitorContent.length === 0 && !crawlProgress && (
+            <Card><p style={{ margin: 0, color: B.sage, textAlign: 'center', padding: 28, fontSize: 13 }}>Add competitors in the Competitors tab, then click Scan All Competitors above.</p></Card>
+          )}
+          {monitorContent.filter(c => (monitorFilter.comp === 'all' || c.competitor === monitorFilter.comp) && (monitorFilter.type === 'all' || c.source === monitorFilter.type) && (c.performanceScore || 0) >= monitorFilter.minScore).map((item, i) => {
+            const isSel = bulkSelected.includes(item.id);
+            return (
+              <Card key={item.id || i} style={{ marginBottom: 8, borderLeft: isSel ? `3px solid ${B.burgundy}` : `3px solid ${B.sand}30` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ display: 'flex', gap: 10, flex: 1 }}>
+                    <input type="checkbox" checked={isSel} onChange={() => setBulkSelected(prev => isSel ? prev.filter(x => x !== item.id) : [...prev, item.id])} style={{ marginTop: 3, flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+                        <strong style={{ fontSize: 12, fontFamily: "'Montserrat',sans-serif", color: B.dark }}>{item.competitor}</strong>
+                        <span style={{ fontSize: 9, fontWeight: 700, background: B.cream, color: B.brown, padding: '1px 5px', borderRadius: 2, textTransform: 'uppercase' }}>{item.source}</span>
+                        {item.publishedAt && <span style={{ fontSize: 10, color: B.sage }}>{item.publishedAt}</span>}
+                        {item.performanceScore > 0 && <span style={{ fontSize: 10, fontWeight: 700, background: item.performanceScore >= 7 ? `${B.burgundy}15` : B.cream, color: item.performanceScore >= 7 ? B.burgundy : B.brown, padding: '1px 6px', borderRadius: 2 }}>Score: {item.performanceScore}/10</span>}
+                      </div>
+                      {item.title && <h4 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600, color: B.dark }}>{item.title}</h4>}
+                      <p style={{ margin: '0 0 6px', fontSize: 12, color: B.brown, lineHeight: 1.55 }}>{item.content}</p>
+                      <div style={{ display: 'flex', gap: 12, fontSize: 10, color: B.sage, flexWrap: 'wrap' }}>
+                        {item.engagementData?.likes > 0 && <span>👍 {item.engagementData.likes} likes</span>}
+                        {item.engagementData?.shares > 0 && <span>↗ {item.engagementData.shares} shares</span>}
+                        {item.engagementData?.comments > 0 && <span>💬 {item.engagementData.comments} comments</span>}
+                        {item.seoData?.estimatedTraffic && <span>Traffic: {item.seoData.estimatedTraffic}</span>}
+                        {item.seoData?.keywords?.length > 0 && <span>Keywords: {item.seoData.keywords.slice(0, 3).join(', ')}</span>}
+                        {item.url && <a href={item.url} target="_blank" rel="noopener" style={{ color: B.burgundy }}>View original →</a>}
+                      </div>
+                    </div>
+                  </div>
+                  <button className="jk-btn" onClick={() => { setReimaginePost(item); setShowReimagine(true); }} style={{ background: B.burgundy, color: B.white, whiteSpace: 'nowrap', flexShrink: 0 }}>✦ Reimagine</button>
+                </div>
+              </Card>
+            );
+          })}
         </>)}
 
         {/* ═══ CALENDAR ═══ */}
@@ -553,6 +815,37 @@ export default function Page() {
 
         {/* ═══ SETTINGS ═══ */}
         {tab === 'settings' && (<>
+          <Sec title="Brand Voice & Style" sub="Used by all content generation across the platform to write in your voice">
+            <Card>
+              <div style={{ display: 'grid', gap: 14 }}>
+                <div><label style={{ display: 'block', fontSize: 9, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 4 }}>Tone of voice</label><input className="jk-input" placeholder='e.g. "warm and authoritative", "casual and witty", "corporate and precise"' value={brandStyle.toneOfVoice} onChange={e => setBrandStyle(s => ({ ...s, toneOfVoice: e.target.value }))} /></div>
+                <div><label style={{ display: 'block', fontSize: 9, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 4 }}>Brand voice guidelines</label><textarea className="jk-input" rows={4} placeholder="Detailed voice and style notes — e.g. first-person OK, avoid jargon, focus on customer outcomes..." value={brandStyle.voiceGuidelines} onChange={e => setBrandStyle(s => ({ ...s, voiceGuidelines: e.target.value }))} style={{ resize: 'vertical' }} /></div>
+                <div><label style={{ display: 'block', fontSize: 9, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 4 }}>Target audience</label><input className="jk-input" placeholder="Who you are writing for — demographics, mindset, what they care about" value={brandStyle.targetAudience} onChange={e => setBrandStyle(s => ({ ...s, targetAudience: e.target.value }))} /></div>
+                <div><label style={{ display: 'block', fontSize: 9, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 4 }}>Topics / themes to avoid</label><input className="jk-input" placeholder="e.g. discount deals, price wars, political opinions" value={brandStyle.topicsToAvoid} onChange={e => setBrandStyle(s => ({ ...s, topicsToAvoid: e.target.value }))} /></div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 9, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 8 }}>Preferred content formats</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {CONTENT_FORMATS.map(f => {
+                      const on = (brandStyle.preferredFormats || []).includes(f);
+                      return <button key={f} className={`filter-btn ${on ? 'on' : ''}`} onClick={() => setBrandStyle(s => ({ ...s, preferredFormats: on ? (s.preferredFormats || []).filter(x => x !== f) : [...(s.preferredFormats || []), f] }))}>{f}</button>;
+                    })}
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </Sec>
+
+          <Sec title="Example Content" sub="Paste 3–5 of your best published posts so the AI can match your style">
+            <Card>
+              {[0, 1, 2, 3, 4].map(i => (
+                <div key={i} style={{ marginBottom: 10 }}>
+                  <label style={{ display: 'block', fontSize: 9, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 3 }}>Example {i + 1}</label>
+                  <textarea className="jk-input" rows={3} placeholder="Paste a published post, caption or article excerpt here..." value={(brandStyle.exampleContent || [])[i] || ''} onChange={e => setBrandStyle(s => { const ex = [...(s.exampleContent || ['', '', '', '', ''])]; ex[i] = e.target.value; return { ...s, exampleContent: ex }; })} style={{ resize: 'vertical', fontSize: 12 }} />
+                </div>
+              ))}
+            </Card>
+          </Sec>
+
           <Sec title="Brand & Contact" sub="Included in generated posts">
             <Card>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', gap: 12 }}>
@@ -610,7 +903,16 @@ export default function Page() {
 
       <div style={{ background: B.dark, padding: '12px 24px', textAlign: 'center' }}><p style={{ margin: 0, fontSize: 10, color: B.sage }}>Johnstown Kitchens · Puckane, Nenagh, Co. Tipperary · bob@johnstownkitchens.ie</p></div>
 
-      {showCreate && <CreateModal onClose={() => setShowCreate(false)} onSave={posts => { addSaved(posts); setShowCreate(false); }} platforms={activePlatforms} pillars={pillars} initialIdea={createIdea} brand={brand} />}
+      {showCreate && <CreateModal onClose={() => setShowCreate(false)} onSave={posts => { addSaved(posts); setShowCreate(false); }} platforms={activePlatforms} pillars={pillars} initialIdea={createIdea} brand={brand} brandStyle={brandStyle} />}
+      {showReimagine && reimaginePost && (
+        <ReimagineModal
+          posts={Array.isArray(reimaginePost) ? monitorContent.filter(c => reimaginePost.includes(c.id)) : reimaginePost}
+          brandStyle={brandStyle}
+          brand={brand}
+          onClose={() => { setShowReimagine(false); setReimaginePost(null); setBulkSelected([]); }}
+          onSave={post => { addSaved([post]); }}
+        />
+      )}
     </div>
   );
 }
