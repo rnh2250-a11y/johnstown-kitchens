@@ -58,16 +58,16 @@ const L = {
 };
 
 // ═══ API — robust JSON extraction ═══
-async function callAI(system, prompt) {
-  const r = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system, prompt }) });
+async function callAI(system, prompt, useSearch = false) {
+  const r = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ system, prompt, useSearch }) });
   if (!r.ok) { const t = await r.text(); throw new Error(`API ${r.status}: ${t}`); }
   const d = await r.json();
   if (d.error) throw new Error(d.error);
   return d.text || '';
 }
 
-async function callJSON(sys, usr) {
-  const raw = await callAI(sys, usr);
+async function callJSON(sys, usr, useSearch = false) {
+  const raw = await callAI(sys, usr, useSearch);
   // Strip markdown code fences that Gemini often adds
   let cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
   // Try array first, then object
@@ -343,14 +343,14 @@ export default function Page() {
   // ═══ ACTIONS ═══
   const scanTrends = async () => {
     sl('trends', true);
-    try { const r = await callJSON(`Content strategist for Irish bespoke kitchen business. Return ONLY a JSON array, no other text.`, `Search for 8 current trends in: kitchen design, Irish home renovation, BER grants, kitchen social media trends. Return: [{"topic":"...","summary":"2-3 sentences","layer":"design|market|content","relevance":"high|medium","contentAngle":"How Bob could post about this","exampleHook":"Opening line for a post"}]`); setTrends(r); L.set('trends', r); }
+    try { const r = await callJSON(`Content strategist for Irish bespoke kitchen business. Return ONLY a JSON array, no other text.`, `Search for 8 current trends in: kitchen design, Irish home renovation, BER grants, kitchen social media trends. Return: [{"topic":"...","summary":"2-3 sentences","layer":"design|market|content","relevance":"high|medium","contentAngle":"How Bob could post about this","exampleHook":"Opening line for a post"}]`, true); setTrends(r); L.set('trends', r); }
     catch (e) { console.error(e); setTrends([{ topic: 'Scan failed — try again', summary: e.message, relevance: 'medium', layer: 'design' }]); }
     sl('trends', false);
   };
 
   const scanEvents = async () => {
     sl('events', true);
-    try { const r = await callJSON(`Events researcher for Irish kitchen business. Return ONLY a JSON array.`, `Search for upcoming kitchen, interiors, renovation events in Ireland/UK 2026: trade shows, expos, awards, grant deadlines, design weeks. Return 5-8: [{"label":"...","date":"YYYY-MM-DD","tip":"Content angle","type":"trade_show|award|grant_deadline"}]`); setDynEvents(r); L.set('dynEvents', r); const d = now.toISOString(); setEventsScanDate(d); L.set('eventsScanDate', d); }
+    try { const r = await callJSON(`Events researcher for Irish kitchen business. Return ONLY a JSON array.`, `Search for upcoming kitchen, interiors, renovation events in Ireland/UK 2026: trade shows, expos, awards, grant deadlines, design weeks. Return 5-8: [{"label":"...","date":"YYYY-MM-DD","tip":"Content angle","type":"trade_show|award|grant_deadline"}]`, true); setDynEvents(r); L.set('dynEvents', r); const d = now.toISOString(); setEventsScanDate(d); L.set('eventsScanDate', d); }
     catch (e) { console.error(e); }
     sl('events', false);
   };
@@ -389,11 +389,12 @@ export default function Page() {
 
   const searchPexels = async () => {
     if (!pexelsQ.trim()) return;
-    const pk = process.env.NEXT_PUBLIC_PEXELS_API_KEY;
-    if (!pk) { alert('Add NEXT_PUBLIC_PEXELS_API_KEY to Vercel environment variables'); return; }
     setPexelsLoading(true);
-    try { const r = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(pexelsQ)}&per_page=15&orientation=landscape`, { headers: { Authorization: pk } }); const d = await r.json(); setPexelsResults(d.photos || []); }
-    catch { alert('Pexels search failed'); }
+    try {
+      const r = await fetch(`/api/pexels?q=${encodeURIComponent(pexelsQ)}`);
+      const d = await r.json();
+      if (d.error) { alert(d.error); } else { setPexelsResults(d.photos || []); }
+    } catch { alert('Pexels search failed'); }
     setPexelsLoading(false);
   };
 

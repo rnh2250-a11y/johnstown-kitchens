@@ -12,27 +12,36 @@ export async function POST(request) {
     const comp = competitor;
     const targets = [comp.website, comp.instagram, comp.facebook, comp.linkedin].filter(Boolean).join(', ');
 
+    const prompt = `Search the web for recent content published by "${comp.name}" (an Irish kitchen business).${targets ? ` Check these sources: ${targets}` : ''}
+
+Find their blog posts, social media posts, and notable web pages from the last 90 days.
+
+Return ONLY a JSON array. If nothing is found, return []. Each item in the array must follow this exact structure:
+{
+  "competitor": "${comp.name}",
+  "title": "post or page title",
+  "content": "2-3 sentence summary of the content",
+  "source": "blog|instagram|facebook|linkedin|website",
+  "url": "direct URL if known, otherwise empty string",
+  "publishedAt": "YYYY-MM-DD or empty string",
+  "performanceScore": 5,
+  "engagementData": { "likes": 0, "shares": 0, "comments": 0 },
+  "seoData": { "estimatedTraffic": "", "keywords": [] }
+}
+
+Return ONLY the JSON array. No explanation, no markdown, no other text.`;
+
     let lastError;
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) await new Promise(res => setTimeout(res, Math.pow(2, attempt) * 1000));
-
-      const prompt = `Search for recent content published by "${comp.name}" (an Irish kitchen company).${targets ? ` Check: ${targets}` : ''}
-
-Find their latest blog posts, social media posts, and notable web pages published in the last 90 days. Return 3-6 items. If you cannot find recent content, return an empty array.`;
 
       const r = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          systemInstruction: {
-            parts: [{ text: 'You are a content intelligence analyst. Search the web for recent published content from the specified Irish kitchen competitor. Return accurate, specific findings.' }],
-          },
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
           tools: [{ googleSearch: {} }],
-          generationConfig: {
-            maxOutputTokens: 2500,
-            temperature: 0.3,
-          },
+          generationConfig: { maxOutputTokens: 8192, temperature: 0.2 },
         }),
       });
 
@@ -40,36 +49,42 @@ Find their latest blog posts, social media posts, and notable web pages publishe
       if (!r.ok) { lastError = r.status; break; }
 
       const data = await r.json();
-      const rawText = data.candidates?.[0]?.content?.parts?.filter(p => p.text).map(p => p.text).join('\n') || '';
+      const rawText = (data.candidates?.[0]?.content?.parts || []).filter(p => p.text).map(p => p.text).join('\n');
 
-      // Strip markdown fences then find JSON array
+      // Strip markdown fences, find JSON array
       const stripped = rawText.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
       const arrMatch = stripped.match(/\[[\s\S]*\]/);
-      if (arrMatch) {
-        try {
-          // Sanitize control chars inside string literals only
-          let out = '';
-          let inStr = false;
-          let esc = false;
-          for (const ch of arrMatch[0]) {
-            const code = ch.charCodeAt(0);
-            if (esc) { out += ch; esc = false; continue; }
-            if (ch === '\\' && inStr) { esc = true; out += ch; continue; }
-            if (ch === '"') { inStr = !inStr; out += ch; continue; }
-            if (inStr && code < 0x20) {
-              out += ch === '\n' ? '\\n' : ch === '\r' ? '\\r' : ch === '\t' ? '\\t' : '\\u' + code.toString(16).padStart(4, '0');
-              continue;
-            }
-            out += ch;
-          }
-          const items = JSON.parse(out);
-          const content = items.map(item => ({ ...item, id: Math.random().toString(36).slice(2, 10), scannedAt: new Date().toISOString() }));
-          return NextResponse.json({ content });
-        } catch (e) {
-          console.error('Crawl parse error:', e.message);
-        }
+      if (!arrMatch) {
+        console.log('Crawl: no JSON array found for', comp.name, '| snippet:', rawText.slice(0, 200));
+        return NextResponse.json({ content: [] });
       }
-      return NextResponse.json({ content: [] });
+
+      try {
+        // Sanitise unescaped control characters inside strings
+        let out = '', inStr = false, esc = false;
+        for (const ch of arrMatch[0]) {
+          const code = ch.charCodeAt(0);
+          if (esc) { out += ch; esc = false; continue; }
+          if (ch === '\\' && inStr) { esc = true; out += ch; continue; }
+          if (ch === '"') { inStr = !inStr; out += ch; continue; }
+          if (inStr && code < 0x20) { out += ch === '\n' ? '\\n' : ch === '\r' ? '\\r' : ch === '\t' ? '\\t' : '\\u' + code.toString(16).padStart(4, '0'); continue; }
+          out += ch;
+        }
+        const items = JSON.parse(out);
+        const content = items.map(item => ({
+          ...item,
+          competitor: comp.name,
+          id: Math.random().toString(36).slice(2, 10),
+          scannedAt: new Date().toISOString(),
+          performanceScore: item.performanceScore || 5,
+          engagementData: item.engagementData || { likes: 0, shares: 0, comments: 0 },
+          seoData: item.seoData || { estimatedTraffic: '', keywords: [] },
+        }));
+        return NextResponse.json({ content });
+      } catch (e) {
+        console.error('Crawl parse error:', e.message, '| snippet:', arrMatch[0].slice(0, 200));
+        return NextResponse.json({ content: [] });
+      }
     }
 
     return NextResponse.json({ error: `API error ${lastError}`, content: [] }, { status: 500 });
