@@ -66,15 +66,46 @@ async function callAI(system, prompt, useSearch = false) {
   return d.text || '';
 }
 
+// Find the first balanced JSON array or object — greedy regex fails when
+// trailing citation text contains { or } characters after the JSON closes.
+function extractJSON(str) {
+  const s = str.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+  for (const open of ['[', '{']) {
+    const start = s.indexOf(open);
+    if (start === -1) continue;
+    let depth = 0, inStr = false, esc = false;
+    for (let i = start; i < s.length; i++) {
+      const ch = s[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\' && inStr) { esc = true; continue; }
+      if (ch === '"') { inStr = !inStr; continue; }
+      if (!inStr) {
+        if (ch === '[' || ch === '{') depth++;
+        else if (ch === ']' || ch === '}') { depth--; if (depth === 0) return s.slice(start, i + 1); }
+      }
+    }
+  }
+  return null;
+}
+
+// Sanitise unescaped control chars inside JSON string values before parsing
+function safeJSONParse(s) {
+  let out = '', inStr = false, esc = false;
+  for (const ch of s) {
+    const code = ch.charCodeAt(0);
+    if (esc) { out += ch; esc = false; continue; }
+    if (ch === '\\' && inStr) { esc = true; out += ch; continue; }
+    if (ch === '"') { inStr = !inStr; out += ch; continue; }
+    if (inStr && code < 0x20) { out += ch === '\n' ? '\\n' : ch === '\r' ? '\\r' : ch === '\t' ? '\\t' : '\\u' + code.toString(16).padStart(4, '0'); continue; }
+    out += ch;
+  }
+  return JSON.parse(out);
+}
+
 async function callJSON(sys, usr, useSearch = false) {
   const raw = await callAI(sys, usr, useSearch);
-  // Strip markdown code fences that Gemini often adds
-  let cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-  // Try array first, then object
-  const arrMatch = cleaned.match(/\[[\s\S]*\]/);
-  if (arrMatch) return JSON.parse(arrMatch[0]);
-  const objMatch = cleaned.match(/\{[\s\S]*\}/);
-  if (objMatch) return JSON.parse(objMatch[0]);
+  const chunk = extractJSON(raw);
+  if (chunk) return safeJSONParse(chunk);
   throw new Error('No JSON found in response');
 }
 
