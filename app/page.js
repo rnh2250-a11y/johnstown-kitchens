@@ -298,6 +298,10 @@ export default function Page() {
   const [ld, setLd] = useState({});
   const [topics, setTopics] = useState('');
   const [activePlatforms, setActivePlatforms] = useState([]);
+  const [calPlatforms, setCalPlatforms] = useState({ facebook: true, instagram: true, pinterest: true, linkedin: false, gbp: false });
+  const [calFreq, setCalFreq] = useState({ facebook: 2, instagram: 3, pinterest: 2, linkedin: 1, gbp: 1 });
+  const [calTopics, setCalTopics] = useState([]);
+  const [calCustomInput, setCalCustomInput] = useState('');
   const [pillars, setPillars] = useState([]);
   const [brand, setBrand] = useState(DEFAULT_BRAND);
   const [showCreate, setShowCreate] = useState(false);
@@ -346,6 +350,9 @@ export default function Page() {
     setBrandStyle(L.get('brandStyle', DEFAULT_BRAND_STYLE));
     setMonitorContent(L.get('monitorContent', []));
     setDiscoveredComps(L.get('discoveredComps', []));
+    setCalPlatforms(L.get('calPlatforms', { facebook: true, instagram: true, pinterest: true, linkedin: false, gbp: false }));
+    setCalFreq(L.get('calFreq', { facebook: 2, instagram: 3, pinterest: 2, linkedin: 1, gbp: 1 }));
+    setCalTopics(L.get('calTopics', []));
     setReady(true);
   }, []);
 
@@ -357,6 +364,9 @@ export default function Page() {
   useEffect(() => { if (ready) L.set('brandStyle', brandStyle); }, [brandStyle, ready]);
   useEffect(() => { if (ready) L.set('monitorContent', monitorContent); }, [monitorContent, ready]);
   useEffect(() => { if (ready) L.set('discoveredComps', discoveredComps); }, [discoveredComps, ready]);
+  useEffect(() => { if (ready) L.set('calPlatforms', calPlatforms); }, [calPlatforms, ready]);
+  useEffect(() => { if (ready) L.set('calFreq', calFreq); }, [calFreq, ready]);
+  useEffect(() => { if (ready) L.set('calTopics', calTopics); }, [calTopics, ready]);
 
   const now = new Date();
   const allEvents = [...SEASONAL.map(e => ({ ...e, src: 'pre' })), ...dynEvents.map(e => ({ ...e, src: 'disc' }))];
@@ -404,9 +414,35 @@ export default function Page() {
   const genSchedule = async () => {
     sl('schedule', true);
     try {
-      const pl = activePlatforms.filter(p => p !== 'blog');
-      const styleCtx = [brandStyle?.toneOfVoice && `Tone: ${brandStyle.toneOfVoice}`, brandStyle?.targetAudience && `Audience: ${brandStyle.targetAudience}`, brandStyle?.voiceGuidelines && `Voice: ${brandStyle.voiceGuidelines}`].filter(Boolean).join('\n');
-      const r = await callJSON(`Strategist for Johnstown Kitchens. ${BIZ}\n${styleCtx} Return ONLY a JSON array.`, `Weekly content schedule. Platforms: ${pl.join(', ')}. ${trends ? 'Trends: ' + JSON.stringify(trends.slice(0, 3)) : ''} ${topics ? 'Topics: ' + topics : ''}\nPillars: ${pillars.join(', ')}.\nGenerate one post per platform. Each: {"day":"Monday","time":"10:00 AM","platform":"facebook","title":"...","content":"Full post ready to publish","hashtags":"#tags","pillar":"...","rationale":"Why this post"}`);
+      const selectedPlatforms = ALL_PLATFORMS.filter(p => calPlatforms[p.id]);
+      if (!selectedPlatforms.length) { sl('schedule', false); return; }
+
+      // Build posting plan: each platform × its frequency
+      const plan = selectedPlatforms.map(p => `${p.label}: ${calFreq[p.id] || 1} post${(calFreq[p.id] || 1) > 1 ? 's' : ''}/week`).join(', ');
+      const totalPosts = selectedPlatforms.reduce((sum, p) => sum + (calFreq[p.id] || 1), 0);
+
+      const allTopics = [...(calTopics.length ? calTopics : pillars)];
+      const topicStr = allTopics.length ? allTopics.join(', ') : pillars.join(', ');
+      const trendSummary = trends?.slice(0, 3).map(t => t.topic).join(', ');
+      const styleCtx = [brandStyle?.toneOfVoice && `Tone: ${brandStyle.toneOfVoice}`, brandStyle?.targetAudience && `Audience: ${brandStyle.targetAudience}`, brandStyle?.voiceGuidelines && `Voice: ${brandStyle.voiceGuidelines}`].filter(Boolean).join('. ');
+
+      const r = await callJSON(
+        `You are a social media strategist for Johnstown Kitchens. ${BIZ}${styleCtx ? ' ' + styleCtx : ''} Return ONLY a valid JSON array.`,
+        `Create a weekly content schedule with exactly ${totalPosts} posts.
+
+Posting plan: ${plan}
+Topics to draw from: ${topicStr}${trendSummary ? `\nCurrent trends to weave in: ${trendSummary}` : ''}
+Content pillars: ${pillars.join(', ')}
+
+Rules:
+- Spread posts evenly across Mon–Sat (avoid Sunday unless needed)
+- Do NOT exceed the frequency per platform stated above
+- Each post must be full publish-ready content, not a placeholder
+- Match platform tone: Instagram = visual/punchy, Facebook = storytelling, Pinterest = SEO-rich, LinkedIn = professional, Google Business = local/short
+
+Return a JSON array where every item is:
+{"day":"Monday","time":"10:00 AM","platform":"facebook","title":"Post title","content":"Full ready-to-post content","hashtags":"#tag1 #tag2","pillar":"Pillar name","rationale":"One sentence why"}`
+      );
       setSchedule(r); L.set('schedule', r);
     } catch (e) { console.error(e); setSchedule([{ day: 'Error', platform: 'facebook', title: 'Failed', content: e.message }]); }
     sl('schedule', false);
@@ -759,21 +795,89 @@ export default function Page() {
         </>)}
 
         {/* ═══ CALENDAR ═══ */}
-        {tab === 'schedule' && (
-          <Sec title="Weekly Calendar" action={<div style={{ display: 'flex', gap: 6 }}><button className="jk-btn" style={{ background: B.white, color: B.dark, border: `1px solid ${B.sand}` }} onClick={exportCSV} disabled={!schedule}>CSV</button><button className="jk-btn" style={{ background: B.white, color: B.dark, border: `1px solid ${B.sand}` }} onClick={genSchedule} disabled={ld.schedule}>{ld.schedule ? '...' : 'Regenerate'}</button></div>}>
-            <Card style={{ marginBottom: 12, background: B.cream }}>
-              <div style={{ display: 'flex', gap: 8 }}><input className="jk-input" placeholder="Topics for this week..." value={topics} onChange={e => setTopics(e.target.value)} /><button className="jk-btn" style={{ background: B.burgundy, color: B.cream, whiteSpace: 'nowrap' }} onClick={genSchedule} disabled={ld.schedule}>Generate</button></div>
-            </Card>
-            {ld.schedule ? <SkelList n={6} /> : schedule ? DAYS.map(day => {
-              const dp = schedule.filter(p => p.day === day); if (!dp.length) return null;
-              return <div key={day} style={{ marginBottom: 16 }}><h3 style={{ fontSize: 10, fontWeight: 700, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '2px', fontFamily: "'Montserrat',sans-serif", borderBottom: `1px solid ${B.sand}50`, paddingBottom: 4 }}>{day}</h3>{dp.map((p, i) => (
+        {tab === 'schedule' && (<>
+          {/* Config card */}
+          <Card style={{ marginBottom: 16, background: B.cream }}>
+            {/* Platforms + frequency */}
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ margin: '0 0 10px', fontSize: 10, fontWeight: 700, color: B.brown, textTransform: 'uppercase', letterSpacing: '1px', fontFamily: "'Montserrat',sans-serif" }}>Platforms &amp; Frequency</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {ALL_PLATFORMS.map(plat => {
+                  const on = !!calPlatforms[plat.id];
+                  return (
+                    <div key={plat.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', background: on ? B.white : `${B.sand}30`, border: `1px solid ${on ? B.burgundy + '40' : B.sand + '60'}`, borderRadius: 2, transition: 'all .15s' }}>
+                      <button onClick={() => setCalPlatforms(p => ({ ...p, [plat.id]: !p[plat.id] }))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 5, opacity: on ? 1 : 0.45 }}>
+                        <span style={{ fontSize: 14 }}>{plat.icon}</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, fontFamily: "'Montserrat',sans-serif", color: on ? B.dark : B.sage }}>{plat.label}</span>
+                      </button>
+                      {on && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4, borderLeft: `1px solid ${B.sand}`, paddingLeft: 8 }}>
+                          <button onClick={() => setCalFreq(f => ({ ...f, [plat.id]: Math.max(1, (f[plat.id] || 1) - 1) }))} style={{ background: B.cream, border: `1px solid ${B.sand}`, borderRadius: 2, width: 20, height: 20, cursor: 'pointer', fontSize: 13, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: B.brown }}>−</button>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: B.burgundy, minWidth: 16, textAlign: 'center' }}>{calFreq[plat.id] || 1}</span>
+                          <button onClick={() => setCalFreq(f => ({ ...f, [plat.id]: Math.min(7, (f[plat.id] || 1) + 1) }))} style={{ background: B.cream, border: `1px solid ${B.sand}`, borderRadius: 2, width: 20, height: 20, cursor: 'pointer', fontSize: 13, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: B.brown }}>+</button>
+                          <span style={{ fontSize: 9, color: B.sage, fontFamily: "'Montserrat',sans-serif" }}>/wk</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <p style={{ margin: '6px 0 0', fontSize: 11, color: B.sage }}>
+                {Object.entries(calPlatforms).filter(([, v]) => v).reduce((s, [k]) => s + (calFreq[k] || 1), 0)} posts per week total
+              </p>
+            </div>
+
+            {/* Topics */}
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ margin: '0 0 8px', fontSize: 10, fontWeight: 700, color: B.brown, textTransform: 'uppercase', letterSpacing: '1px', fontFamily: "'Montserrat',sans-serif" }}>Topics</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                {[...pillars, ...calTopics.filter(t => !pillars.includes(t))].map(topic => {
+                  const selected = calTopics.includes(topic) || calTopics.length === 0;
+                  return (
+                    <button key={topic} onClick={() => setCalTopics(prev => prev.includes(topic) ? prev.filter(t => t !== topic) : [...prev, topic])} className="filter-btn" style={{ background: calTopics.includes(topic) ? B.burgundy : calTopics.length === 0 ? B.cream : B.cream, color: calTopics.includes(topic) ? B.white : B.brown, borderColor: calTopics.includes(topic) ? B.burgundy : `${B.sand}60`, opacity: calTopics.length === 0 ? 0.7 : 1 }}>
+                      {topic} {calTopics.includes(topic) ? '×' : '+'}
+                    </button>
+                  );
+                })}
+              </div>
+              {calTopics.length === 0 && <p style={{ margin: '0 0 8px', fontSize: 11, color: B.sage, fontStyle: 'italic' }}>All pillars included — select specific topics to focus on, or add custom ones below.</p>}
+              {calTopics.length > 0 && <button onClick={() => setCalTopics([])} style={{ background: 'none', border: 'none', color: B.sage, fontSize: 11, cursor: 'pointer', textDecoration: 'underline', padding: 0, marginBottom: 8 }}>Clear selection (use all)</button>}
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input className="jk-input" placeholder="Add custom topic e.g. SEAI BER grants, handleless kitchens..." value={calCustomInput} onChange={e => setCalCustomInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && calCustomInput.trim()) { setCalTopics(p => [...p, calCustomInput.trim()]); setCalCustomInput(''); } }} style={{ flex: 1 }} />
+                <button className="jk-btn" style={{ background: B.white, color: B.dark, border: `1px solid ${B.sand}`, whiteSpace: 'nowrap' }} onClick={() => { if (calCustomInput.trim()) { setCalTopics(p => [...p, calCustomInput.trim()]); setCalCustomInput(''); } }}>Add topic</button>
+              </div>
+            </div>
+
+            {/* Generate */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button className="jk-btn" style={{ background: B.burgundy, color: B.white }} onClick={genSchedule} disabled={ld.schedule || !Object.values(calPlatforms).some(Boolean)}>
+                  {ld.schedule ? <><Sp light sz={12} /> Generating...</> : schedule ? 'Regenerate Calendar' : 'Generate Calendar'}
+                </button>
+                {schedule && <button className="jk-btn" style={{ background: B.white, color: B.dark, border: `1px solid ${B.sand}` }} onClick={exportCSV}>Export CSV</button>}
+              </div>
+              {schedule && <span style={{ fontSize: 11, color: B.sage }}>{schedule.length} posts generated</span>}
+            </div>
+          </Card>
+
+          {/* Results */}
+          {ld.schedule ? <SkelList n={6} /> : schedule ? DAYS.map(day => {
+            const dp = schedule.filter(p => p.day === day); if (!dp.length) return null;
+            return <div key={day} style={{ marginBottom: 16 }}>
+              <h3 style={{ fontSize: 10, fontWeight: 700, margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '2px', fontFamily: "'Montserrat',sans-serif", borderBottom: `1px solid ${B.sand}50`, paddingBottom: 4 }}>{day}</h3>
+              {dp.map((p, i) => (
                 <Card key={i} style={{ marginBottom: 6 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}><Badge platform={p.platform} /><span style={{ fontSize: 10, color: B.sage }}>{p.time}</span>{p.pillar && <span style={{ fontSize: 9, color: B.brown, background: `${B.brown}08`, padding: '2px 6px', borderRadius: 2, fontWeight: 600 }}>{p.pillar}</span>}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+                        <Badge platform={p.platform} />
+                        <span style={{ fontSize: 10, color: B.sage }}>{p.time}</span>
+                        {p.pillar && <span style={{ fontSize: 9, color: B.brown, background: `${B.brown}08`, padding: '2px 6px', borderRadius: 2, fontWeight: 600 }}>{p.pillar}</span>}
+                      </div>
                       {p.title && <h4 style={{ margin: '0 0 2px', fontSize: 12, fontWeight: 600, fontFamily: "'Montserrat',sans-serif" }}>{p.title}</h4>}
                       <p style={{ margin: 0, fontSize: 12, color: B.brown, lineHeight: 1.6 }}>{p.content}</p>
                       {p.hashtags && <p style={{ margin: '3px 0 0', fontSize: 10, color: B.burgundy }}>{p.hashtags}</p>}
+                      {p.rationale && <p style={{ margin: '4px 0 0', fontSize: 11, color: B.sage, fontStyle: 'italic' }}>💡 {p.rationale}</p>}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                       <button className="jk-btn-sm" onClick={() => navigator.clipboard.writeText(p.content + (p.hashtags ? '\n\n' + p.hashtags : ''))}>Copy</button>
@@ -781,10 +885,10 @@ export default function Page() {
                     </div>
                   </div>
                 </Card>
-              ))}</div>;
-            }) : <Card><p style={{ margin: 0, color: B.sage, textAlign: 'center', padding: 24 }}>Generate content above</p></Card>}
-          </Sec>
-        )}
+              ))}
+            </div>;
+          }) : null}
+        </>)}
 
         {/* ═══ SAVED ═══ */}
         {tab === 'library' && (
