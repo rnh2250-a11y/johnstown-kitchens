@@ -330,6 +330,9 @@ export default function Page() {
   const [showReimagine, setShowReimagine] = useState(false);
   const [reimaginePost, setReimaginePost] = useState(null);
   const [bulkSelected, setBulkSelected] = useState([]);
+  const [expandedComps, setExpandedComps] = useState(new Set());
+  const [expandedPlatforms, setExpandedPlatforms] = useState(new Set());
+  const [scanningComp, setScanningComp] = useState(null);
 
   const sl = (k, v) => setLd(p => ({ ...p, [k]: v }));
 
@@ -478,21 +481,29 @@ Return a JSON array where every item is:
     setPexelsLoading(false);
   };
 
-  // Progressive monitor scan — one competitor at a time to avoid timeout
-  const scanMonitor = async (compsToScan) => {
+  // Scan competitors one at a time. singleComp = rescan one specific competitor.
+  const scanMonitor = async (compsToScan, singleComp) => {
     const list = compsToScan || comps;
     if (!list.length) return;
-    setMonitorContent([]);
+    if (singleComp) {
+      setScanningComp(singleComp);
+      // Remove old results for this competitor before rescanning
+      setMonitorContent(prev => { const next = prev.filter(i => i.competitor !== singleComp); L.set('monitorContent', next); return next; });
+    } else {
+      setMonitorContent([]);
+      L.set('monitorContent', []);
+    }
     for (let i = 0; i < list.length; i++) {
       const comp = list[i];
-      setCrawlProgress({ current: i + 1, total: list.length, name: comp.name });
+      if (!singleComp) setCrawlProgress({ current: i + 1, total: list.length, name: comp.name });
       try {
         const r = await fetch('/api/crawl', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ competitor: comp }) });
         const d = await r.json();
-        if (d.content?.length) setMonitorContent(prev => { const next = [...prev, ...d.content].sort((a, b) => (b.performanceScore || 0) - (a.performanceScore || 0)); L.set('monitorContent', next); return next; });
+        if (d.content?.length) setMonitorContent(prev => { const next = [...prev, ...d.content]; L.set('monitorContent', next); return next; });
       } catch (e) { console.error('Monitor scan error:', e); }
     }
     setCrawlProgress(null);
+    setScanningComp(null);
   };
 
   const discoverComps = async () => {
@@ -706,93 +717,149 @@ Return a JSON array where every item is:
         </>)}
 
         {/* ═══ MONITOR ═══ */}
-        {tab === 'monitor' && (<>
-          {/* Scan controls */}
-          <Card style={{ marginBottom: 16, background: B.cream }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-              <div>
-                <p style={{ margin: 0, fontSize: 13, fontWeight: 600, fontFamily: "'Montserrat',sans-serif" }}>Content Monitoring</p>
-                <p style={{ margin: '2px 0 0', fontSize: 11, color: B.sage }}>Searches Instagram, Facebook and blog for each competitor — last 30 days. Results appear as each completes.</p>
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {monitorContent.length > 0 && <button className="jk-btn" onClick={() => { setMonitorContent([]); L.set('monitorContent', []); }} style={{ background: B.white, color: B.brown, border: `1px solid ${B.sand}` }}>Clear</button>}
-                <button className="jk-btn" onClick={() => scanMonitor()} disabled={!!crawlProgress} style={{ background: B.burgundy, color: B.white }}>
-                  {crawlProgress ? <><Sp light sz={12} /> Scanning {crawlProgress.name} ({crawlProgress.current}/{crawlProgress.total})</> : 'Scan All Competitors'}
-                </button>
-              </div>
-            </div>
-            {bulkSelected.length > 0 && (
-              <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 12, color: B.brown }}>{bulkSelected.length} selected</span>
-                <button className="jk-btn" style={{ background: B.burgundy, color: B.white }} onClick={() => { setReimaginePost(bulkSelected); setShowReimagine(true); }}>Reimagine Selected ({bulkSelected.length})</button>
-                <button className="jk-btn-sm" onClick={() => setBulkSelected([])}>Clear selection</button>
-              </div>
-            )}
-          </Card>
+        {tab === 'monitor' && (() => {
+          const srcLabel = s => s === 'instagram' ? '📸 Instagram' : s === 'facebook' ? '📘 Facebook' : s === 'linkedin' ? '💼 LinkedIn' : s === 'blog' ? '✍️ Blog' : '🌐 Website';
+          const srcColor = s => s === 'instagram' ? '#E4405F' : s === 'facebook' ? '#1877F2' : s === 'linkedin' ? '#0A66C2' : B.brown;
+          const srcBg    = s => s === 'instagram' ? '#E4405F18' : s === 'facebook' ? '#1877F218' : s === 'linkedin' ? '#0A66C218' : B.cream;
+          const engScore = item => (item.engagementData?.likes || 0) + (item.engagementData?.comments || 0) * 2 + (item.engagementData?.shares || 0) * 3 + (item.performanceScore || 5);
+          const PLATFORMS = ['instagram', 'facebook', 'blog', 'website', 'linkedin'];
 
-          {/* Filters */}
-          {monitorContent.length > 0 && (
-            <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-              <select className="jk-input" style={{ width: 'auto', fontSize: 11 }} value={monitorFilter.comp} onChange={e => setMonitorFilter(f => ({ ...f, comp: e.target.value }))}>
-                <option value="all">All competitors</option>
-                {[...new Set(monitorContent.map(c => c.competitor))].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-              <select className="jk-input" style={{ width: 'auto', fontSize: 11 }} value={monitorFilter.type} onChange={e => setMonitorFilter(f => ({ ...f, type: e.target.value }))}>
-                <option value="all">All types</option>
-                {['blog', 'instagram', 'facebook', 'linkedin', 'website'].map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <select className="jk-input" style={{ width: 'auto', fontSize: 11 }} value={monitorFilter.minScore} onChange={e => setMonitorFilter(f => ({ ...f, minScore: Number(e.target.value) }))}>
-                <option value={0}>Any score</option>
-                <option value={4}>Score 4+</option>
-                <option value={6}>Score 6+</option>
-                <option value={8}>Score 8+</option>
-              </select>
-              <span style={{ fontSize: 11, color: B.sage, marginLeft: 4 }}>
-                {monitorContent.filter(c => (monitorFilter.comp === 'all' || c.competitor === monitorFilter.comp) && (monitorFilter.type === 'all' || c.source === monitorFilter.type) && (c.performanceScore || 0) >= monitorFilter.minScore).length} results
-              </span>
-            </div>
-          )}
+          // Group content by competitor
+          const grouped = comps.map(c => {
+            const items = monitorContent.filter(i => i.competitor === c.name).sort((a, b) => engScore(b) - engScore(a));
+            const byPlatform = PLATFORMS.reduce((acc, s) => { acc[s] = items.filter(i => i.source === s); return acc; }, {});
+            return { ...c, items, byPlatform };
+          });
 
-          {/* Content cards */}
-          {crawlProgress && !monitorContent.length && <SkelList n={4} />}
-          {monitorContent.length === 0 && !crawlProgress && (
-            <Card>
-              <p style={{ margin: '0 0 6px', color: B.sage, textAlign: 'center', padding: '20px 28px 4px', fontSize: 13 }}>Add competitors in the Competitors tab, then click Scan All Competitors.</p>
-              <p style={{ margin: '0 0 20px', color: B.sage, textAlign: 'center', fontSize: 11 }}>Tip: add social profile URLs when adding competitors for better results — especially for smaller local businesses whose posts may not appear in general search.</p>
-            </Card>
-          )}
-          {monitorContent.filter(c => (monitorFilter.comp === 'all' || c.competitor === monitorFilter.comp) && (monitorFilter.type === 'all' || c.source === monitorFilter.type) && (c.performanceScore || 0) >= monitorFilter.minScore).map((item, i) => {
-            const isSel = bulkSelected.includes(item.id);
-            return (
-              <Card key={item.id || i} style={{ marginBottom: 8, borderLeft: isSel ? `3px solid ${B.burgundy}` : `3px solid ${B.sand}30` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                  <div style={{ display: 'flex', gap: 10, flex: 1 }}>
-                    <input type="checkbox" checked={isSel} onChange={() => setBulkSelected(prev => isSel ? prev.filter(x => x !== item.id) : [...prev, item.id])} style={{ marginTop: 3, flexShrink: 0 }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
-                        <strong style={{ fontSize: 12, fontFamily: "'Montserrat',sans-serif", color: B.dark }}>{item.competitor}</strong>
-                        <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 2, textTransform: 'uppercase', background: item.source === 'instagram' ? '#E4405F18' : item.source === 'facebook' ? '#1877F218' : item.source === 'linkedin' ? '#0A66C218' : B.cream, color: item.source === 'instagram' ? '#E4405F' : item.source === 'facebook' ? '#1877F2' : item.source === 'linkedin' ? '#0A66C2' : B.brown }}>{item.source === 'instagram' ? '📸 Instagram' : item.source === 'facebook' ? '📘 Facebook' : item.source === 'linkedin' ? '💼 LinkedIn' : item.source === 'blog' ? '✍️ Blog' : '🌐 Website'}</span>
-                        {item.publishedAt && <span style={{ fontSize: 10, color: B.sage }}>{item.publishedAt}</span>}
-                        {item.performanceScore > 0 && <span style={{ fontSize: 10, fontWeight: 700, background: item.performanceScore >= 7 ? `${B.burgundy}15` : B.cream, color: item.performanceScore >= 7 ? B.burgundy : B.brown, padding: '1px 6px', borderRadius: 2 }}>Score: {item.performanceScore}/10</span>}
-                      </div>
-                      {item.title && <h4 style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600, color: B.dark }}>{item.title}</h4>}
-                      <p style={{ margin: '0 0 6px', fontSize: 12, color: B.brown, lineHeight: 1.55 }}>{item.content}</p>
-                      <div style={{ display: 'flex', gap: 12, fontSize: 10, color: B.sage, flexWrap: 'wrap' }}>
-                        {item.engagementData?.likes > 0 && <span>👍 {item.engagementData.likes} likes</span>}
-                        {item.engagementData?.shares > 0 && <span>↗ {item.engagementData.shares} shares</span>}
-                        {item.engagementData?.comments > 0 && <span>💬 {item.engagementData.comments} comments</span>}
-                        {item.seoData?.estimatedTraffic && <span>Traffic: {item.seoData.estimatedTraffic}</span>}
-                        {item.seoData?.keywords?.length > 0 && <span>Keywords: {item.seoData.keywords.slice(0, 3).join(', ')}</span>}
-                        {item.url && <a href={item.url} target="_blank" rel="noopener" style={{ color: B.burgundy }}>View original →</a>}
-                      </div>
-                    </div>
-                  </div>
-                  <button className="jk-btn" onClick={() => { setReimaginePost(item); setShowReimagine(true); }} style={{ background: B.burgundy, color: B.white, whiteSpace: 'nowrap', flexShrink: 0 }}>✦ Reimagine</button>
+          const toggleComp = name => setExpandedComps(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; });
+          const togglePlat = key  => setExpandedPlatforms(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+
+          return (<>
+            {/* Top bar */}
+            <Card style={{ marginBottom: 16, background: B.cream }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                <div>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, fontFamily: "'Montserrat',sans-serif" }}>Content Monitoring — 6 months</p>
+                  <p style={{ margin: '2px 0 0', fontSize: 11, color: B.sage }}>Searches Instagram, Facebook and blog for each competitor. Expand a competitor to see posts by platform, sorted by engagement.</p>
                 </div>
-              </Card>
-            );
-          })}
-        </>)}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {monitorContent.length > 0 && <button className="jk-btn" onClick={() => { setMonitorContent([]); L.set('monitorContent', []); }} style={{ background: B.white, color: B.brown, border: `1px solid ${B.sand}` }}>Clear all</button>}
+                  <button className="jk-btn" onClick={() => scanMonitor()} disabled={!!crawlProgress || !!scanningComp} style={{ background: B.burgundy, color: B.white }}>
+                    {crawlProgress ? <><Sp light sz={12} /> {crawlProgress.name} ({crawlProgress.current}/{crawlProgress.total})</> : 'Scan All Competitors'}
+                  </button>
+                </div>
+              </div>
+              {bulkSelected.length > 0 && (
+                <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, paddingTop: 10, borderTop: `1px solid ${B.sand}50` }}>
+                  <span style={{ fontSize: 12, color: B.brown }}>{bulkSelected.length} selected</span>
+                  <button className="jk-btn" style={{ background: B.burgundy, color: B.white }} onClick={() => { setReimaginePost(bulkSelected); setShowReimagine(true); }}>✦ Reimagine Selected</button>
+                  <button className="jk-btn-sm" onClick={() => setBulkSelected([])}>Clear</button>
+                </div>
+              )}
+            </Card>
+
+            {/* Empty state */}
+            {monitorContent.length === 0 && !crawlProgress && !scanningComp && (
+              <Card><p style={{ margin: 0, color: B.sage, textAlign: 'center', padding: '24px 28px', fontSize: 13 }}>Add competitors in the Competitors tab, then click Scan All Competitors.<br /><span style={{ fontSize: 11 }}>Tip: add Instagram/Facebook URLs per competitor for best results.</span></p></Card>
+            )}
+
+            {/* Competitor accordions */}
+            {grouped.map(comp => {
+              const isExpanded = expandedComps.has(comp.name);
+              const isScanning = scanningComp === comp.name || (crawlProgress?.name === comp.name);
+              const totalPosts = comp.items.length;
+              const platCounts = PLATFORMS.filter(s => comp.byPlatform[s]?.length > 0);
+
+              return (
+                <div key={comp.name} style={{ marginBottom: 8 }}>
+                  {/* Competitor header row */}
+                  <div
+                    onClick={() => !isScanning && totalPosts > 0 && toggleComp(comp.name)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: isExpanded ? B.white : B.warmWhite, border: `1px solid ${isExpanded ? B.sand : B.sand + '60'}`, borderRadius: isExpanded ? '2px 2px 0 0' : 2, cursor: totalPosts > 0 ? 'pointer' : 'default', userSelect: 'none' }}
+                  >
+                    <span style={{ fontSize: 12, color: B.sage, minWidth: 14, fontWeight: 700 }}>{totalPosts > 0 ? (isExpanded ? '▼' : '▶') : '—'}</span>
+                    <strong style={{ fontSize: 13, fontFamily: "'Montserrat',sans-serif", flex: 1 }}>{comp.name}</strong>
+
+                    {/* Platform pill counts */}
+                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                      {platCounts.map(s => (
+                        <span key={s} style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 10, background: srcBg(s), color: srcColor(s) }}>
+                          {srcLabel(s)} {comp.byPlatform[s].length}
+                        </span>
+                      ))}
+                      {totalPosts === 0 && !isScanning && <span style={{ fontSize: 11, color: B.sage }}>No results yet</span>}
+                      {isScanning && <><Sp sz={12} /><span style={{ fontSize: 11, color: B.sage }}>Scanning…</span></>}
+                    </div>
+
+                    {/* Per-competitor rescan button */}
+                    <button
+                      className="jk-btn-sm"
+                      disabled={!!crawlProgress || !!scanningComp}
+                      onClick={e => { e.stopPropagation(); scanMonitor([comp], comp.name); }}
+                      style={{ flexShrink: 0, color: B.burgundy, borderColor: `${B.burgundy}50` }}
+                    >↻ Rescan</button>
+                  </div>
+
+                  {/* Expanded content — platform sections */}
+                  {isExpanded && totalPosts > 0 && (
+                    <div style={{ border: `1px solid ${B.sand}`, borderTop: 'none', borderRadius: '0 0 2px 2px', background: B.white }}>
+                      {PLATFORMS.filter(s => comp.byPlatform[s]?.length > 0).map(src => {
+                        const platKey = `${comp.name}:${src}`;
+                        const isPlatOpen = expandedPlatforms.has(platKey);
+                        const posts = comp.byPlatform[src];
+                        return (
+                          <div key={src} style={{ borderTop: `1px solid ${B.sand}40` }}>
+                            {/* Platform sub-header */}
+                            <div
+                              onClick={() => togglePlat(platKey)}
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', cursor: 'pointer', background: isPlatOpen ? `${srcColor(src)}06` : 'transparent' }}
+                            >
+                              <span style={{ fontSize: 11, color: B.sage, minWidth: 12 }}>{isPlatOpen ? '▾' : '▸'}</span>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: srcColor(src), fontFamily: "'Montserrat',sans-serif" }}>{srcLabel(src)}</span>
+                              <span style={{ fontSize: 11, color: B.sage }}>{posts.length} post{posts.length !== 1 ? 's' : ''}</span>
+                              <span style={{ fontSize: 10, color: B.sage, marginLeft: 'auto' }}>sorted by engagement</span>
+                            </div>
+
+                            {/* Posts */}
+                            {isPlatOpen && posts.map((item, pi) => {
+                              const isSel = bulkSelected.includes(item.id);
+                              const eng = (item.engagementData?.likes || 0) + (item.engagementData?.comments || 0) + (item.engagementData?.shares || 0);
+                              return (
+                                <div key={item.id || pi} style={{ display: 'flex', gap: 10, padding: '10px 16px 10px 28px', borderTop: `1px solid ${B.sand}30`, background: isSel ? `${B.burgundy}04` : 'transparent', alignItems: 'flex-start' }}>
+                                  <input type="checkbox" checked={isSel} onChange={() => setBulkSelected(prev => isSel ? prev.filter(x => x !== item.id) : [...prev, item.id])} style={{ marginTop: 3, flexShrink: 0 }} />
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
+                                      {item.publishedAt && <span style={{ fontSize: 10, color: B.sage }}>{item.publishedAt}</span>}
+                                      {item.performanceScore > 0 && (
+                                        <span style={{ fontSize: 10, fontWeight: 700, background: item.performanceScore >= 7 ? `${B.burgundy}15` : B.cream, color: item.performanceScore >= 7 ? B.burgundy : B.brown, padding: '1px 6px', borderRadius: 2 }}>
+                                          Score {item.performanceScore}/10
+                                        </span>
+                                      )}
+                                      {eng > 0 && <span style={{ fontSize: 10, color: B.sage }}>
+                                        {item.engagementData?.likes > 0 && `👍 ${item.engagementData.likes}`}
+                                        {item.engagementData?.comments > 0 && `  💬 ${item.engagementData.comments}`}
+                                        {item.engagementData?.shares > 0 && `  ↗ ${item.engagementData.shares}`}
+                                      </span>}
+                                      {item.url && <a href={item.url} target="_blank" rel="noopener" style={{ fontSize: 10, color: B.burgundy }}>View →</a>}
+                                    </div>
+                                    {item.title && <h4 style={{ margin: '0 0 3px', fontSize: 12, fontWeight: 600, color: B.dark }}>{item.title}</h4>}
+                                    <p style={{ margin: 0, fontSize: 12, color: B.brown, lineHeight: 1.55 }}>{item.content}</p>
+                                    {item.seoData?.keywords?.length > 0 && <p style={{ margin: '3px 0 0', fontSize: 10, color: B.sage }}>Keywords: {item.seoData.keywords.slice(0, 4).join(', ')}</p>}
+                                  </div>
+                                  <button className="jk-btn" onClick={() => { setReimaginePost(item); setShowReimagine(true); }} style={{ background: B.burgundy, color: B.white, whiteSpace: 'nowrap', flexShrink: 0, fontSize: 10, padding: '6px 10px' }}>✦ Reimagine</button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </>);
+        })()}
 
         {/* ═══ CALENDAR ═══ */}
         {tab === 'schedule' && (<>

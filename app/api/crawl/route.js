@@ -9,7 +9,7 @@ async function geminiSearch(apiKey, searchQuery, extractionPrompt) {
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: searchQuery + '\n\n' + extractionPrompt }] }],
       tools: [{ googleSearch: {} }],
-      generationConfig: { maxOutputTokens: 4096, temperature: 0.1 },
+      generationConfig: { maxOutputTokens: 8192, temperature: 0.1 },
     }),
   });
   if (!r.ok) return null;
@@ -20,16 +20,29 @@ async function geminiSearch(apiKey, searchQuery, extractionPrompt) {
 function parseItems(raw, compName, source) {
   if (!raw) return [];
   const stripped = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
-  const match = stripped.match(/\[[\s\S]*?\]/);
-  if (!match) return [];
+  // Balanced-brace extraction — find first [ and walk to its closing ]
+  const start = stripped.indexOf('[');
+  if (start === -1) return [];
+  let depth = 0, inStr = false, esc = false, end = -1;
+  for (let i = start; i < stripped.length; i++) {
+    const ch = stripped[i];
+    if (esc) { esc = false; continue; }
+    if (ch === '\\' && inStr) { esc = true; continue; }
+    if (ch === '"') { inStr = !inStr; continue; }
+    if (!inStr) {
+      if (ch === '[' || ch === '{') depth++;
+      else if (ch === ']' || ch === '}') { depth--; if (depth === 0) { end = i; break; } }
+    }
+  }
+  if (end === -1) return [];
   try {
-    let out = '', inStr = false, esc = false;
-    for (const ch of match[0]) {
+    let out = '', inS = false, es = false;
+    for (const ch of stripped.slice(start, end + 1)) {
       const code = ch.charCodeAt(0);
-      if (esc) { out += ch; esc = false; continue; }
-      if (ch === '\\' && inStr) { esc = true; out += ch; continue; }
-      if (ch === '"') { inStr = !inStr; out += ch; continue; }
-      if (inStr && code < 0x20) { out += ch === '\n' ? '\\n' : ch === '\r' ? '\\r' : ch === '\t' ? '\\t' : '\\u' + code.toString(16).padStart(4, '0'); continue; }
+      if (es) { out += ch; es = false; continue; }
+      if (ch === '\\' && inS) { es = true; out += ch; continue; }
+      if (ch === '"') { inS = !inS; out += ch; continue; }
+      if (inS && code < 0x20) { out += ch === '\n' ? '\\n' : ch === '\r' ? '\\r' : ch === '\t' ? '\\t' : '\\u' + code.toString(16).padStart(4, '0'); continue; }
       out += ch;
     }
     const items = JSON.parse(out);
@@ -46,7 +59,7 @@ function parseItems(raw, compName, source) {
   } catch { return []; }
 }
 
-const ITEM_SCHEMA = `[{"title":"post title or description","content":"what this post is about in 2 sentences","source":"instagram|facebook|blog|website","url":"post URL or empty string","publishedAt":"YYYY-MM-DD or empty string","performanceScore":6,"engagementData":{"likes":0,"shares":0,"comments":0},"seoData":{"estimatedTraffic":"","keywords":[]}}]`;
+const ITEM_SCHEMA = `[{"title":"post title or caption","content":"what this post is about in 2 sentences","source":"instagram|facebook|blog|website","url":"post URL or empty string","publishedAt":"YYYY-MM-DD or empty string","performanceScore":6,"engagementData":{"likes":120,"shares":15,"comments":8},"seoData":{"estimatedTraffic":"","keywords":[]}}]`;
 
 export async function POST(request) {
   try {
@@ -55,7 +68,10 @@ export async function POST(request) {
     const apiKey = process.env.GOOGLE_AI_API_KEY;
     if (!apiKey) return NextResponse.json({ error: 'No GOOGLE_AI_API_KEY set' }, { status: 500 });
 
-    const { name, website, instagram, facebook, linkedin } = competitor;
+    const { name, website, instagram, facebook } = competitor;
+    const since = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]; // 6 months ago
+
+    const extractInstruction = `List up to 20 posts from the results as a JSON array. Include only posts published after ${since}. Estimate likes/comments/shares from any visible signals. If nothing found, return []. Use this schema:\n${ITEM_SCHEMA}\nReturn ONLY the JSON array, no other text.`;
 
     // Run three targeted platform searches in parallel
     const [igRaw, fbRaw, blogRaw] = await Promise.all([
@@ -63,41 +79,42 @@ export async function POST(request) {
       // ── INSTAGRAM ────────────────────────────────────────────────────────────
       geminiSearch(apiKey,
         instagram
-          ? `Search for recent Instagram posts from this profile: ${instagram}\nFind posts from the last 30 days.`
-          : `Search Google for: "${name}" site:instagram.com\nFind their Instagram account and any recent posts visible in search results.`,
-        `List every Instagram post you found as a JSON array. If none found, return []. Schema:\n${ITEM_SCHEMA}\nReturn ONLY the JSON array.`
+          ? `Find Instagram posts from ${instagram} published since ${since}. Look for all posts, reels, and stories visible in search. Sort findings by engagement (likes + comments).`
+          : `Search Google for: "${name}" site:instagram.com\nFind all their Instagram posts visible in search results since ${since}.`,
+        extractInstruction
       ),
 
       // ── FACEBOOK ─────────────────────────────────────────────────────────────
       geminiSearch(apiKey,
         facebook
-          ? `Search for recent Facebook posts from this page: ${facebook}\nFind posts from the last 30 days.`
-          : `Search Google for: "${name}" site:facebook.com\nFind their Facebook page and any recent posts visible in search results.`,
-        `List every Facebook post you found as a JSON array. If none found, return []. Schema:\n${ITEM_SCHEMA}\nReturn ONLY the JSON array.`
+          ? `Find Facebook posts from ${facebook} published since ${since}. Include all posts, videos, and updates visible in search.`
+          : `Search Google for: "${name}" site:facebook.com\nFind all their Facebook page posts visible in search results since ${since}.`,
+        extractInstruction
       ),
 
       // ── BLOG / WEBSITE ───────────────────────────────────────────────────────
       geminiSearch(apiKey,
         website
-          ? `Search for recent blog posts and new pages on this website: ${website}\nLook for articles, news, project pages published in the last 30 days.`
-          : `Search Google for: "${name}" kitchen blog OR news OR article\nFind any blog posts or news published recently by this company.`,
-        `List every blog post or new website page you found as a JSON array. If none found, return []. Schema:\n${ITEM_SCHEMA}\nReturn ONLY the JSON array.`
+          ? `Find all blog posts, news articles, project pages, and new content on ${website} published since ${since}.`
+          : `Search Google for: "${name}" kitchen blog OR news OR "new project" OR article\nFind all website/blog content published since ${since}.`,
+        extractInstruction
       ),
     ]);
 
-    const igItems    = parseItems(igRaw,   name, 'instagram');
-    const fbItems    = parseItems(fbRaw,   name, 'facebook');
-    const blogItems  = parseItems(blogRaw, name, 'blog');
+    const igItems   = parseItems(igRaw,   name, 'instagram');
+    const fbItems   = parseItems(fbRaw,   name, 'facebook');
+    const blogItems = parseItems(blogRaw, name, 'blog');
 
-    // De-duplicate by URL; keep all items from all platforms
-    const seen = new Set();
-    const content = [...igItems, ...fbItems, ...blogItems].filter(item => {
-      const key = item.url || item.title;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    }).sort((a, b) => (b.performanceScore || 0) - (a.performanceScore || 0));
+    // De-duplicate by URL; sort highest engagement first within each platform
+    const engScore = item => (item.engagementData?.likes || 0) + (item.engagementData?.comments || 0) * 2 + (item.engagementData?.shares || 0) * 3 + (item.performanceScore || 5);
+    const dedup = (items) => {
+      const seen = new Set();
+      return items
+        .filter(item => { const key = item.url || item.title; if (seen.has(key)) return false; seen.add(key); return true; })
+        .sort((a, b) => engScore(b) - engScore(a));
+    };
 
+    const content = [...dedup(igItems), ...dedup(fbItems), ...dedup(blogItems)];
     console.log(`Crawl ${name}: ${igItems.length} IG, ${fbItems.length} FB, ${blogItems.length} blog → ${content.length} total`);
     return NextResponse.json({ content });
 
