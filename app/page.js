@@ -676,12 +676,12 @@ export default function Page() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
               <div>
                 <p style={{ margin: 0, fontSize: 13, fontWeight: 600, fontFamily: "'Montserrat',sans-serif" }}>Content Monitoring</p>
-                <p style={{ margin: '2px 0 0', fontSize: 11, color: B.sage }}>Scans competitors one at a time — results appear as each completes</p>
+                <p style={{ margin: '2px 0 0', fontSize: 11, color: B.sage }}>Searches Instagram, Facebook and blog for each competitor — last 30 days. Results appear as each completes.</p>
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
                 {monitorContent.length > 0 && <button className="jk-btn" onClick={() => { setMonitorContent([]); L.set('monitorContent', []); }} style={{ background: B.white, color: B.brown, border: `1px solid ${B.sand}` }}>Clear</button>}
                 <button className="jk-btn" onClick={() => scanMonitor()} disabled={!!crawlProgress} style={{ background: B.burgundy, color: B.white }}>
-                  {crawlProgress ? <><Sp light sz={12} /> {crawlProgress.name} ({crawlProgress.current}/{crawlProgress.total})</> : 'Scan All Competitors'}
+                  {crawlProgress ? <><Sp light sz={12} /> Scanning {crawlProgress.name} ({crawlProgress.current}/{crawlProgress.total})</> : 'Scan All Competitors'}
                 </button>
               </div>
             </div>
@@ -720,7 +720,10 @@ export default function Page() {
           {/* Content cards */}
           {crawlProgress && !monitorContent.length && <SkelList n={4} />}
           {monitorContent.length === 0 && !crawlProgress && (
-            <Card><p style={{ margin: 0, color: B.sage, textAlign: 'center', padding: 28, fontSize: 13 }}>Add competitors in the Competitors tab, then click Scan All Competitors above.</p></Card>
+            <Card>
+              <p style={{ margin: '0 0 6px', color: B.sage, textAlign: 'center', padding: '20px 28px 4px', fontSize: 13 }}>Add competitors in the Competitors tab, then click Scan All Competitors.</p>
+              <p style={{ margin: '0 0 20px', color: B.sage, textAlign: 'center', fontSize: 11 }}>Tip: add social profile URLs when adding competitors for better results — especially for smaller local businesses whose posts may not appear in general search.</p>
+            </Card>
           )}
           {monitorContent.filter(c => (monitorFilter.comp === 'all' || c.competitor === monitorFilter.comp) && (monitorFilter.type === 'all' || c.source === monitorFilter.type) && (c.performanceScore || 0) >= monitorFilter.minScore).map((item, i) => {
             const isSel = bulkSelected.includes(item.id);
@@ -732,7 +735,7 @@ export default function Page() {
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
                         <strong style={{ fontSize: 12, fontFamily: "'Montserrat',sans-serif", color: B.dark }}>{item.competitor}</strong>
-                        <span style={{ fontSize: 9, fontWeight: 700, background: B.cream, color: B.brown, padding: '1px 5px', borderRadius: 2, textTransform: 'uppercase' }}>{item.source}</span>
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 2, textTransform: 'uppercase', background: item.source === 'instagram' ? '#E4405F18' : item.source === 'facebook' ? '#1877F218' : item.source === 'linkedin' ? '#0A66C218' : B.cream, color: item.source === 'instagram' ? '#E4405F' : item.source === 'facebook' ? '#1877F2' : item.source === 'linkedin' ? '#0A66C2' : B.brown }}>{item.source === 'instagram' ? '📸 Instagram' : item.source === 'facebook' ? '📘 Facebook' : item.source === 'linkedin' ? '💼 LinkedIn' : item.source === 'blog' ? '✍️ Blog' : '🌐 Website'}</span>
                         {item.publishedAt && <span style={{ fontSize: 10, color: B.sage }}>{item.publishedAt}</span>}
                         {item.performanceScore > 0 && <span style={{ fontSize: 10, fontWeight: 700, background: item.performanceScore >= 7 ? `${B.burgundy}15` : B.cream, color: item.performanceScore >= 7 ? B.burgundy : B.brown, padding: '1px 6px', borderRadius: 2 }}>Score: {item.performanceScore}/10</span>}
                       </div>
