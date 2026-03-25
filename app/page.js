@@ -66,13 +66,14 @@ async function callAI(system, prompt, useSearch = false) {
   return d.text || '';
 }
 
-// Find the first balanced JSON array or object — greedy regex fails when
-// trailing citation text contains { or } characters after the JSON closes.
+// Find the first balanced JSON value — picks whichever of [ or { appears first
+// in the response, so embedded arrays in the prompt that get echoed back can't
+// steal the result from the actual object the model was asked to produce.
 function extractJSON(str) {
   const s = str.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-  for (const open of ['[', '{']) {
-    const start = s.indexOf(open);
-    if (start === -1) continue;
+  const ai = s.indexOf('['), oi = s.indexOf('{');
+  const starts = [[ai, '['], [oi, '{']].filter(([i]) => i !== -1).sort((a, b) => a[0] - b[0]);
+  for (const [start] of starts) {
     let depth = 0, inStr = false, esc = false;
     for (let i = start; i < s.length; i++) {
       const ch = s[i];
@@ -413,8 +414,20 @@ export default function Page() {
 
   const genBlog = async () => {
     sl('blog', true);
-    try { const r = await callJSON(`Strategist for Johnstown Kitchens. ${BIZ} Return ONLY JSON.`, `Monthly blog for johnstownkitchens.ie. ${trends ? 'Trends: ' + JSON.stringify(trends.slice(0, 3)) : ''}. SEO for Irish kitchen searches. Return: {"title":"...","outline":["Section 1","Section 2"],"introduction":"First 2 paragraphs","seoKeywords":["kw1"],"metaDescription":"...","rationale":"Why now"}`); setBlog(r); L.set('blog', r); }
-    catch (e) { console.error(e); setBlog({ title: 'Error', introduction: e.message }); }
+    try {
+      // Summarise trends as plain text — not raw JSON — to avoid the model echoing
+      // a JSON array before the blog object, which confuses the extractor.
+      const trendSummary = trends?.slice(0, 3).map(t => t.topic).join(', ');
+      const r = await callJSON(
+        `You are a content strategist for Johnstown Kitchens. ${BIZ} Return ONLY a single JSON object, no arrays, no other text.`,
+        `Write a monthly blog concept for johnstownkitchens.ie.${trendSummary ? ` Relevant trends: ${trendSummary}.` : ''} Optimise for Irish kitchen renovation searches. Return this exact JSON object: {"title":"...","outline":["Section 1","Section 2","Section 3","Section 4"],"introduction":"Opening two paragraphs of the article","seoKeywords":["keyword 1","keyword 2","keyword 3"],"metaDescription":"155-char meta description","rationale":"Why this topic now"}`
+      );
+      if (!r || Array.isArray(r) || !r.title) throw new Error('Unexpected response shape');
+      setBlog(r); L.set('blog', r);
+    } catch (e) {
+      console.error('genBlog error:', e);
+      setBlog({ title: 'Error', introduction: e.message });
+    }
     sl('blog', false);
   };
 
@@ -832,7 +845,9 @@ export default function Page() {
         {/* ═══ BLOG ═══ */}
         {tab === 'blog' && (
           <Sec title="Monthly Blog" action={<button className="jk-btn" style={{ background: B.burgundy, color: B.cream }} onClick={genBlog} disabled={ld.blog}>{ld.blog ? '...' : 'Generate'}</button>}>
-            {ld.blog ? <SkelList /> : blog ? (
+            {ld.blog ? <SkelList /> : blog?.title === 'Error' ? (
+              <Card><p style={{ margin: 0, color: B.burgundy, padding: 12, fontSize: 12 }}>Generation failed: {blog.introduction} — click Generate to try again.</p></Card>
+            ) : blog?.title ? (
               <Card>
                 <h3 style={{ margin: '0 0 4px', fontSize: 20, fontFamily: "'Cormorant',Georgia,serif" }}>{blog.title}</h3>
                 {blog.metaDescription && <div style={{ padding: '8px 10px', background: B.cream, borderRadius: 2, marginBottom: 10, fontSize: 11, color: B.brown }}><strong>Meta:</strong> {blog.metaDescription}</div>}
