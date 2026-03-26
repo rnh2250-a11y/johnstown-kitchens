@@ -332,6 +332,10 @@ export default function Page() {
   const [pexelsResults, setPexelsResults] = useState([]);
   const [pexelsLoading, setPexelsLoading] = useState(false);
   const [brandStyle, setBrandStyle] = useState(DEFAULT_BRAND_STYLE);
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserResult, setNewUserResult] = useState(null);
+  const [newUserLoading, setNewUserLoading] = useState(false);
+  const [newUserError, setNewUserError] = useState('');
   const [showReimagine, setShowReimagine] = useState(false);
   const [reimaginePost, setReimaginePost] = useState(null);
 
@@ -814,6 +818,51 @@ Return a JSON array where every item is:
                 <input className="jk-input" placeholder="Add pillar..." value={newPillar} onChange={e => setNewPillar(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && newPillar.trim()) { setPillars([...pillars, newPillar.trim()]); setNewPillar(''); } }} />
                 <button className="jk-btn" style={{ background: B.burgundy, color: B.cream }} onClick={() => { if (newPillar.trim()) { setPillars([...pillars, newPillar.trim()]); setNewPillar(''); } }}>Add</button>
               </div>
+            </Card>
+          </Sec>
+
+          <Sec title="User Management" sub="Create login credentials for team members">
+            <Card>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                <input
+                  className="jk-input"
+                  type="email"
+                  placeholder="New user email address"
+                  value={newUserEmail}
+                  onChange={e => { setNewUserEmail(e.target.value); setNewUserResult(null); setNewUserError(''); }}
+                  style={{ flex: 1 }}
+                />
+                <button
+                  className="jk-btn"
+                  style={{ background: B.burgundy, color: B.cream, whiteSpace: 'nowrap' }}
+                  disabled={newUserLoading || !newUserEmail.trim()}
+                  onClick={async () => {
+                    setNewUserLoading(true); setNewUserResult(null); setNewUserError('');
+                    try {
+                      const r = await fetch('/api/admin/create-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: newUserEmail.trim() }) });
+                      const d = await r.json();
+                      if (d.error) { setNewUserError(d.error); } else { setNewUserResult({ email: newUserEmail.trim(), password: d.password }); setNewUserEmail(''); }
+                    } catch (e) { setNewUserError(e.message); }
+                    setNewUserLoading(false);
+                  }}
+                >{newUserLoading ? 'Creating...' : 'Create User'}</button>
+              </div>
+              {newUserError && <p style={{ margin: '0 0 10px', fontSize: 12, color: '#5E3032' }}>{newUserError}</p>}
+              {newUserResult && (
+                <div style={{ padding: '12px 16px', background: '#f0f7ee', border: '1px solid #c3dfc0', borderRadius: 3 }}>
+                  <p style={{ margin: '0 0 6px', fontSize: 10, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px' }}>User created successfully</p>
+                  <p style={{ margin: '0 0 4px', fontSize: 13, color: B.dark }}>Email: <strong>{newUserResult.email}</strong></p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <p style={{ margin: 0, fontSize: 13, color: B.dark }}>Password: <strong style={{ fontFamily: 'monospace', fontSize: 14, letterSpacing: '1px' }}>{newUserResult.password}</strong></p>
+                    <button
+                      className="jk-btn"
+                      style={{ padding: '3px 10px', fontSize: 10 }}
+                      onClick={() => { navigator.clipboard.writeText(newUserResult.password); }}
+                    >Copy</button>
+                  </div>
+                  <p style={{ margin: '8px 0 0', fontSize: 11, color: B.sage }}>Share these credentials securely. The user can change their password after logging in.</p>
+                </div>
+              )}
             </Card>
           </Sec>
         </>)}
