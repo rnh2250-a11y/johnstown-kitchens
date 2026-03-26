@@ -839,9 +839,8 @@ Return a JSON array where every item is:
                     try {
                       const r = await fetch('/api/admin/create-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: newUserEmail.trim() }) });
                       const d = await r.json();
-                      if (d.error === 'KV_NOT_CONFIGURED') { setNewUserError('Additional user accounts require a Vercel KV store. See Settings note below.'); }
-                      else if (d.error) { setNewUserError(d.error); }
-                      else { setNewUserResult({ email: newUserEmail.trim(), password: d.password }); setNewUserEmail(''); }
+                      if (d.error) { setNewUserError(d.error); }
+                      else { setNewUserResult({ email: newUserEmail.trim(), password: d.password, usersJson: d.usersJson }); setNewUserEmail(''); }
                     } catch (e) { setNewUserError(e.message); }
                     setNewUserLoading(false);
                   }}
@@ -850,17 +849,23 @@ Return a JSON array where every item is:
               {newUserError && <p style={{ margin: '0 0 10px', fontSize: 12, color: '#5E3032' }}>{newUserError}</p>}
               {newUserResult && (
                 <div style={{ padding: '12px 16px', background: '#f0f7ee', border: '1px solid #c3dfc0', borderRadius: 3 }}>
-                  <p style={{ margin: '0 0 6px', fontSize: 10, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px' }}>User created successfully</p>
-                  <p style={{ margin: '0 0 4px', fontSize: 13, color: B.dark }}>Email: <strong>{newUserResult.email}</strong></p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <p style={{ margin: '0 0 10px', fontSize: 10, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px' }}>Credentials generated</p>
+                  <p style={{ margin: '0 0 3px', fontSize: 13, color: B.dark }}>Email: <strong>{newUserResult.email}</strong></p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
                     <p style={{ margin: 0, fontSize: 13, color: B.dark }}>Password: <strong style={{ fontFamily: 'monospace', fontSize: 14, letterSpacing: '1px' }}>{newUserResult.password}</strong></p>
-                    <button
-                      className="jk-btn"
-                      style={{ padding: '3px 10px', fontSize: 10 }}
-                      onClick={() => { navigator.clipboard.writeText(newUserResult.password); }}
-                    >Copy</button>
+                    <button className="jk-btn" style={{ padding: '3px 10px', fontSize: 10 }} onClick={() => navigator.clipboard.writeText(newUserResult.password)}>Copy</button>
                   </div>
-                  <p style={{ margin: '8px 0 0', fontSize: 11, color: B.sage }}>Share these credentials securely. Note the password — it cannot be retrieved again.</p>
+                  <p style={{ margin: '0 0 6px', fontSize: 11, fontWeight: 700, color: B.brown, fontFamily: "'Montserrat',sans-serif", textTransform: 'uppercase', letterSpacing: '1px' }}>To activate this login:</p>
+                  <ol style={{ margin: '0 0 10px', paddingLeft: 18, fontSize: 12, color: B.dark, lineHeight: 1.8 }}>
+                    <li>Go to <strong>Vercel → your project → Settings → Environment Variables</strong></li>
+                    <li>Find <code style={{ background: '#e8e8e8', padding: '1px 4px', borderRadius: 2 }}>USERS_JSON</code> (create it if it doesn&apos;t exist)</li>
+                    <li>Set its value to the JSON below, then click Save</li>
+                    <li>Go to <strong>Deployments</strong> and redeploy</li>
+                  </ol>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    <code style={{ flex: 1, display: 'block', background: '#1e1e1e', color: '#a8d8a8', padding: '8px 10px', borderRadius: 3, fontSize: 11, wordBreak: 'break-all', lineHeight: 1.5 }}>{newUserResult.usersJson}</code>
+                    <button className="jk-btn" style={{ padding: '3px 10px', fontSize: 10, whiteSpace: 'nowrap' }} onClick={() => navigator.clipboard.writeText(newUserResult.usersJson)}>Copy JSON</button>
+                  </div>
                 </div>
               )}
             </Card>

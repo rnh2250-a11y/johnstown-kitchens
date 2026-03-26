@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/auth';
-import { createUser, hashPassword, isKVConfigured } from '@/lib/users';
+import { getExtraUsers } from '@/lib/users';
 
 function generatePassword() {
   const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -26,25 +26,16 @@ export async function POST(request) {
   const session = await getSessionFromRequest(request);
   if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
 
-  try {
-    const { email } = await request.json();
-    if (!email || !email.includes('@')) {
-      return NextResponse.json({ error: 'Valid email required' }, { status: 400 });
-    }
-
-    if (!isKVConfigured()) {
-      return NextResponse.json({ error: 'KV_NOT_CONFIGURED' }, { status: 503 });
-    }
-
-    const password = generatePassword();
-    const passwordHash = await hashPassword(password);
-    await createUser(email, passwordHash);
-
-    return NextResponse.json({ password });
-  } catch (err) {
-    if (err.message === 'KV_NOT_CONFIGURED') {
-      return NextResponse.json({ error: 'KV_NOT_CONFIGURED' }, { status: 503 });
-    }
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  const { email } = await request.json();
+  if (!email || !email.includes('@')) {
+    return NextResponse.json({ error: 'Valid email required' }, { status: 400 });
   }
+
+  const password = generatePassword();
+
+  // Build the updated USERS_JSON value so the admin can paste it into Vercel
+  const existing = getExtraUsers().filter(u => u.email.toLowerCase() !== email.toLowerCase());
+  const updated = [...existing, { email: email.toLowerCase().trim(), password }];
+
+  return NextResponse.json({ password, usersJson: JSON.stringify(updated) });
 }

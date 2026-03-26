@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { setSessionCookie } from '@/lib/auth';
-import { getUser, verifyPassword } from '@/lib/users';
+import { findUser } from '@/lib/users';
 
 export async function POST(request) {
   try {
@@ -9,7 +9,7 @@ export async function POST(request) {
 
     const key = email.toLowerCase().trim();
 
-    // Check admin env var first (always works, no KV needed)
+    // Check admin env var
     if (process.env.ADMIN_EMAIL?.toLowerCase().trim() === key) {
       if (password === process.env.ADMIN_PASSWORD) {
         const res = NextResponse.json({ ok: true });
@@ -19,13 +19,11 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 
-    // Check KV store for additional users
-    const user = await getUser(key);
-    if (!user) return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
-
-    const stored = typeof user === 'string' ? JSON.parse(user) : user;
-    const valid = await verifyPassword(password, stored.passwordHash);
-    if (!valid) return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
+    // Check USERS_JSON extra users
+    const user = findUser(key);
+    if (!user || user.password !== password) {
+      return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
+    }
 
     const res = NextResponse.json({ ok: true });
     await setSessionCookie({ email: key }, res);
