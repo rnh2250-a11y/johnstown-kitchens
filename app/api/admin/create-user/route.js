@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getSessionFromRequest } from '@/lib/auth';
+import { createUser, hashPassword, isKVConfigured } from '@/lib/users';
 
 function generatePassword() {
   const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -7,7 +8,6 @@ function generatePassword() {
   const digits = '23456789';
   const special = '!@#$%&*';
   const all = upper + lower + digits + special;
-  // Guarantee at least one of each class
   let pwd = [
     upper[Math.floor(Math.random() * upper.length)],
     lower[Math.floor(Math.random() * lower.length)],
@@ -15,7 +15,6 @@ function generatePassword() {
     special[Math.floor(Math.random() * special.length)],
   ];
   for (let i = 4; i < 12; i++) pwd.push(all[Math.floor(Math.random() * all.length)]);
-  // Shuffle
   for (let i = pwd.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pwd[i], pwd[j]] = [pwd[j], pwd[i]];
@@ -24,31 +23,28 @@ function generatePassword() {
 }
 
 export async function POST(request) {
+  const session = getSessionFromRequest(request);
+  if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
+
   try {
     const { email } = await request.json();
     if (!email || !email.includes('@')) {
       return NextResponse.json({ error: 'Valid email required' }, { status: 400 });
     }
 
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
-
-    const password = generatePassword();
-
-    const { data, error } = await supabase.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-    });
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+    if (!isKVConfigured()) {
+      return NextResponse.json({ error: 'KV_NOT_CONFIGURED' }, { status: 503 });
     }
 
-    return NextResponse.json({ password, userId: data.user?.id });
+    const password = generatePassword();
+    const passwordHash = await hashPassword(password);
+    await createUser(email, passwordHash);
+
+    return NextResponse.json({ password });
   } catch (err) {
+    if (err.message === 'KV_NOT_CONFIGURED') {
+      return NextResponse.json({ error: 'KV_NOT_CONFIGURED' }, { status: 503 });
+    }
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

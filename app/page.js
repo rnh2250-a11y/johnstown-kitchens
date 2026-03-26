@@ -1,6 +1,5 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase-browser';
 
 const B = { burgundy: '#5E3032', sand: '#BFBAA9', sage: '#87866C', brown: '#756158', cream: '#f3f0eb', warmWhite: '#faf8f5', dark: '#1e1e1e', white: '#ffffff' };
 
@@ -306,7 +305,6 @@ function ReimagineModal({ posts, brandStyle, brand, onClose, onSave }) {
 
 // ═══ MAIN APP ═══
 export default function Page() {
-  const supabase = createClient();
   const [tab, setTab] = useState('dashboard');
   const [trends, setTrends] = useState(null);
   const [schedule, setSchedule] = useState(null);
@@ -342,7 +340,7 @@ export default function Page() {
   const sl = (k, v) => setLd(p => ({ ...p, [k]: v }));
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data?.user));
+    fetch('/api/auth/me').then(r => r.json()).then(d => setUser(d.user));
     setTrends(L.get('trends', null));
     setSchedule(L.get('schedule', null));
     setBlog(L.get('blog', null));
@@ -466,7 +464,7 @@ Return a JSON array where every item is:
 
   const fullScan = async () => { await scanTrends(); await genSchedule(); };
   const scanning = ld.trends || ld.schedule;
-  const logout = async () => { await supabase.auth.signOut(); window.location.href = '/login'; };
+  const logout = async () => { await fetch('/api/auth/logout', { method: 'POST' }); window.location.href = '/login'; };
   const addSaved = (posts) => setSavedPosts(p => [...posts, ...p]);
 
   const exportCSV = () => {
@@ -841,7 +839,9 @@ Return a JSON array where every item is:
                     try {
                       const r = await fetch('/api/admin/create-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: newUserEmail.trim() }) });
                       const d = await r.json();
-                      if (d.error) { setNewUserError(d.error); } else { setNewUserResult({ email: newUserEmail.trim(), password: d.password }); setNewUserEmail(''); }
+                      if (d.error === 'KV_NOT_CONFIGURED') { setNewUserError('Additional user accounts require a Vercel KV store. See Settings note below.'); }
+                      else if (d.error) { setNewUserError(d.error); }
+                      else { setNewUserResult({ email: newUserEmail.trim(), password: d.password }); setNewUserEmail(''); }
                     } catch (e) { setNewUserError(e.message); }
                     setNewUserLoading(false);
                   }}
@@ -860,7 +860,7 @@ Return a JSON array where every item is:
                       onClick={() => { navigator.clipboard.writeText(newUserResult.password); }}
                     >Copy</button>
                   </div>
-                  <p style={{ margin: '8px 0 0', fontSize: 11, color: B.sage }}>Share these credentials securely. The user can change their password after logging in.</p>
+                  <p style={{ margin: '8px 0 0', fontSize: 11, color: B.sage }}>Share these credentials securely. Note the password — it cannot be retrieved again.</p>
                 </div>
               )}
             </Card>
