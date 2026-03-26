@@ -13,7 +13,7 @@ export async function POST(request) {
     if (process.env.ADMIN_EMAIL?.toLowerCase().trim() === key) {
       if (password === process.env.ADMIN_PASSWORD) {
         const res = NextResponse.json({ ok: true });
-        setSessionCookie({ email: key, isAdmin: true }, res);
+        await setSessionCookie({ email: key, isAdmin: true }, res);
         return res;
       }
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
@@ -28,9 +28,9 @@ export async function POST(request) {
     if (!valid) return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
 
     const res = NextResponse.json({ ok: true });
-    setSessionCookie({ email: key }, res);
+    await setSessionCookie({ email: key }, res);
     return res;
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: 'Login failed' }, { status: 500 });
   }
 }

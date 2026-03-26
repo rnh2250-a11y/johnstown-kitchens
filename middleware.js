@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getSessionFromRequest } from '@/lib/auth';
 
-export function middleware(request) {
+export async function middleware(request) {
   const { pathname } = request.nextUrl;
 
-  // Always allow: login page, auth API routes, Next.js internals
   if (
     pathname.startsWith('/login') ||
     pathname.startsWith('/api/auth/') ||
@@ -14,7 +13,7 @@ export function middleware(request) {
     return NextResponse.next();
   }
 
-  const session = getSessionFromRequest(request);
+  const session = await getSessionFromRequest(request);
 
   if (!session) {
     const url = request.nextUrl.clone();
