@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = 'llama3-70b-8192';
+const MODEL = 'llama-3.1-8b-instant';
 
 export async function POST(request) {
   try {
@@ -33,8 +33,8 @@ export async function POST(request) {
       if (r.status === 429 || r.status >= 500) { lastError = `Groq ${r.status}`; continue; }
       if (!r.ok) {
         const e = await r.text();
-        console.error('Groq:', r.status, e);
-        return NextResponse.json({ error: `Groq ${r.status}` }, { status: 500 });
+        console.error('Groq error:', r.status, e);
+        return NextResponse.json({ error: `Groq ${r.status}: ${e}` }, { status: 500 });
       }
 
       const data = await r.json();
