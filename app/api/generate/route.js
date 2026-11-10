@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = 'google/gemma-2-9b-it:free';
+const MODEL = 'google/gemma-4-26b-a4b-it:free';
 
 export async function POST(request) {
   try {
