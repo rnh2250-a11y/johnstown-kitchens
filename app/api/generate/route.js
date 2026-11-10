@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL = 'llama-3.3-70b-versatile';
+const MODEL = 'llama3-70b-8192';
 
 export async function POST(request) {
   try {
