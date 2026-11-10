@@ -1,9 +1,6 @@
 {
   "functions": {
-    "app/api/crawl/route.js": {
-      "maxDuration": 300
-    },
-    "app/api/discover-competitors/route.js": {
+"app/api/discover-competitors/route.js": {
       "maxDuration": 60
     },
     "app/api/reimagine/route.js": {
